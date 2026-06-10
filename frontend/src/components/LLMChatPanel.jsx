@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const API_URL = import.meta.env.VITE_API_URL;
+const WELCOME_MESSAGE = {
+  role: "bot",
+  text: "Witaj! Jestem RajkoAI. Przeanalizuję dla Ciebie obecną pozycję na szachownicy, wskażę plany oraz pułapki debiutowe. O co chcesz zapytać?"
+};
 
 export default function LLMChatPanel() {
-  const [messages, setMessages] = useState([
-    { role: "bot", text: "Witaj! Jestem RajkoAI. Przeanalizuję dla Ciebie obecną pozycję na szachownicy, wskażę plany oraz pułapki debiutowe. O co chcesz zapytać?" }
-  ]);
+  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
@@ -52,11 +55,27 @@ export default function LLMChatPanel() {
     }
   };
 
+  const handleClear = () => {
+    setMessages([WELCOME_MESSAGE]);
+    setInput("");
+  };
+
   return (
     <div className="side-panel chat-panel">
-      <h3 className="panel-title" style={{ borderColor: '#9b59b6' }}>
-        🤖 Agent RajkoAI
-      </h3>
+      <div className="chat-panel-header">
+        <h3 className="panel-title">
+          🤖 Agent RajkoAI
+        </h3>
+        <button
+          type="button"
+          className="chat-clear"
+          onClick={handleClear}
+          disabled={isLoading}
+          title="Wyczyść rozmowę"
+        >
+          Wyczyść czat
+        </button>
+      </div>
 
       <div className="chat-container">
         <div className="chat-messages">
@@ -65,7 +84,7 @@ export default function LLMChatPanel() {
               <strong>{msg.role === "bot" ? "RajkoAI:" : "Ty:"}</strong>
               <div style={{ marginTop: '4px' }}>
                 {msg.role === "bot" ? (
-                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
                 ) : (
                   msg.text
                 )}

@@ -4,3 +4,4 @@ python-dotenv
 chess
 pydantic
 httpx
+openai

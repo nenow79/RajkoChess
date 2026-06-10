@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 # Wymuszamy wczytanie pliku .env dokładnie w tym momencie,
 # żeby mieć pewność, że klucz będzie dostępny.
-load_dotenv()
+load_dotenv(override=True)
 
 # Inicjalizacja asynchronicznego klienta OpenAI ze wskazaniem na OpenRouter
 client = AsyncOpenAI(
@@ -47,7 +47,7 @@ async def generate_chess_analysis(fen: str, lichess_data: dict, stockfish_data: 
 
     try:
         # Pobieramy nazwę modelu z .env, a jeśli jej nie ma, używamy Claude'a jako zabezpieczenia
-        selected_model = os.getenv("LLM_MODEL", "anthropic/claude-3.5-sonnet")
+        selected_model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4.6")
 
         response = await client.chat.completions.create(
             model=selected_model,
@@ -55,7 +55,7 @@ async def generate_chess_analysis(fen: str, lichess_data: dict, stockfish_data: 
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}"}
             ],
-            headers={
+            extra_headers={
                 "HTTP-Referer": "http://localhost:5173",
                 "X-Title": "Rajko Chess Analyser",
             }
