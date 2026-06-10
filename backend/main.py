@@ -9,7 +9,15 @@ from typing import Optional
 from chess_logic.game import ChessGame
 from chess_logic.lichess import get_opening_explorer_data
 from chess_logic.engine import analyze_position
-from chess_logic.llm_agent import generate_chess_analysis
+from chess_logic.engine import analyze_game
+from chess_logic.chesscom import get_recent_games
+from chess_logic.llm_agent import (
+    AVAILABLE_MODELS,
+    AVAILABLE_MODEL_IDS,
+    generate_chess_analysis,
+    generate_game_analysis,
+    get_default_model,
+)
 
 # Ładowanie zmiennych środowiskowych z .env
 load_dotenv()
@@ -18,6 +26,14 @@ app = FastAPI(title="Chess API")
 
 class ChatRequest(BaseModel):
     message: str = ""
+    model: Optional[str] = None
+
+class ImportGameRequest(BaseModel):
+    pgn: str
+    metadata: Optional[dict] = None
+
+class GamePositionRequest(BaseModel):
+    ply: int
 
 app.add_middleware(
     CORSMiddleware,
@@ -119,6 +135,60 @@ async def reset_game():
     }
 
 
+@app.get("/api/chesscom/{username}/recent")
+async def chesscom_recent_games(username: str, limit: int = 12):
+    try:
+        return {"username": username, "games": await get_recent_games(username, min(max(limit, 1), 30))}
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail="Nie udało się pobrać partii z Chess.com")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Brak połączenia z Chess.com API")
+
+
+@app.post("/api/import-game")
+async def import_game(request: ImportGameRequest):
+    try:
+        metadata = {
+            key: value for key, value in (request.metadata or {}).items()
+            if key != "pgn"
+        }
+        return game.load_pgn(request.pgn, metadata)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/imported-game/position")
+async def imported_game_position(request: GamePositionRequest):
+    try:
+        return game.go_to_imported_ply(request.ply)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/analyze-game")
+async def analyze_imported_game(request: ChatRequest, time_limit: float = 0.15):
+    imported_game = game.get_imported_game()
+    if not imported_game:
+        raise HTTPException(status_code=400, detail="Najpierw zaimportuj zakończoną partię")
+
+    selected_model = request.model or get_default_model()
+    if selected_model not in AVAILABLE_MODEL_IDS:
+        raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
+
+    try:
+        engine_data = await analyze_game(imported_game["pgn"], time_limit=min(max(time_limit, 0.05), 1.0))
+        response = await generate_game_analysis(
+            pgn=imported_game["pgn"],
+            engine_analysis=engine_data,
+            metadata=imported_game["metadata"],
+            user_prompt=request.message,
+            model=selected_model,
+        )
+        return {"response": response, "model": selected_model, "engine_analysis": engine_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/chat")
 async def chat_with_agent(
         request: ChatRequest,
@@ -130,6 +200,10 @@ async def chat_with_agent(
     przyjmując parametry czasu i głębokości silnika prosto z URL.
     """
     current_fen = game.get_fen()
+    selected_model = request.model or get_default_model()
+
+    if selected_model not in AVAILABLE_MODEL_IDS:
+        raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
 
     try:
         # Przekazujemy parametry pobrane dynamicznie z adresu URL
@@ -141,10 +215,20 @@ async def chat_with_agent(
             fen=current_fen,
             lichess_data=lichess_data,
             stockfish_data=stockfish_data,
-            user_prompt=request.message
+            user_prompt=request.message,
+            model=selected_model
         )
 
-        return {"response": analysis_text}
+        return {"response": analysis_text, "model": selected_model}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/models")
+async def get_models():
+    """Zwraca modele LLM dostępne w interfejsie."""
+    return {
+        "default_model": get_default_model(),
+        "models": AVAILABLE_MODELS,
+    }

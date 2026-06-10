@@ -7,6 +7,7 @@ import ChessBoardContainer from "./components/ChessBoardContainer";
 import LichessExplorer from "./components/LichessExplorer";
 import StockfishPanel from "./components/StockfishPanel";
 import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
+import ChessComPanel from "./components/ChessComPanel";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -18,6 +19,10 @@ export default function App() {
   const [explorerData, setExplorerData] = useState(null);
   const [analysisData, setAnalysisData] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [chessComGames, setChessComGames] = useState([]);
+  const [isLoadingChessCom, setIsLoadingChessCom] = useState(true);
+  const [importedGame, setImportedGame] = useState(null);
+  const [gameNavigation, setGameNavigation] = useState(null);
 
   const fetchExplorerData = () => {
     axios.get(`${API_URL}/explorer`)
@@ -38,16 +43,53 @@ export default function App() {
     fetchAnalysis();
   };
 
+  const fetchChessComGames = () => {
+    setIsLoadingChessCom(true);
+    axios.get(`${API_URL}/chesscom/nenow79/recent?limit=12`)
+      .then((res) => setChessComGames(res.data.games))
+      .catch((err) => console.error("Błąd Chess.com:", err))
+      .finally(() => setIsLoadingChessCom(false));
+  };
+
   useEffect(() => {
     axios.get(`${API_URL}/position`)
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
-        fetchAllData();
       })
       .catch((err) => console.error("Błąd backendu:", err));
+    axios.get(`${API_URL}/explorer`)
+      .then((res) => setExplorerData(res.data))
+      .catch((err) => console.error("Błąd Lichess:", err));
+    axios.get(`${API_URL}/analyze?time_limit=1.0&lines=3`)
+      .then((res) => setAnalysisData(res.data))
+      .catch((err) => console.error("Błąd Stockfish:", err));
+    axios.get(`${API_URL}/chesscom/nenow79/recent?limit=12`)
+      .then((res) => setChessComGames(res.data.games))
+      .catch((err) => console.error("Błąd Chess.com:", err))
+      .finally(() => setIsLoadingChessCom(false));
   }, []);
+
+  const handleImportGame = (selectedGame) => {
+    axios.post(`${API_URL}/import-game`, {
+      pgn: selectedGame.pgn,
+      metadata: selectedGame,
+    })
+      .then((res) => {
+        gameRef.current = new Chess(res.data.fen);
+        setFen(res.data.fen);
+        setBoardKey(prev => prev + 1);
+        setImportedGame(selectedGame);
+        setGameNavigation({
+          currentPly: res.data.current_ply,
+          totalPlies: res.data.total_plies,
+          moveLabel: res.data.move_label,
+        });
+        fetchAllData();
+      })
+      .catch((err) => console.error("Błąd importu PGN:", err));
+  };
 
   function onPieceDrop(sourceSquare, targetSquare) {
     try {
@@ -61,6 +103,8 @@ export default function App() {
         .then((res) => {
           gameRef.current = new Chess(res.data.fen);
           setFen(res.data.fen);
+          setImportedGame(null);
+          setGameNavigation(null);
           fetchAllData();
         })
         .catch((err) => {
@@ -71,7 +115,7 @@ export default function App() {
         });
 
       return true;
-    } catch (err) { return false; }
+    } catch { return false; }
   }
 
   const handleUndo = () => {
@@ -79,6 +123,8 @@ export default function App() {
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
+        setImportedGame(null);
+        setGameNavigation(null);
         fetchAllData();
       })
       .catch(err => console.error("Błąd cofania:", err));
@@ -90,9 +136,27 @@ export default function App() {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
+        setImportedGame(null);
+        setGameNavigation(null);
         fetchAllData();
       })
       .catch(err => console.error("Błąd resetu:", err));
+  };
+
+  const handleNavigate = (ply) => {
+    axios.post(`${API_URL}/imported-game/position`, { ply })
+      .then((res) => {
+        gameRef.current = new Chess(res.data.fen);
+        setFen(res.data.fen);
+        setBoardKey(prev => prev + 1);
+        setGameNavigation({
+          currentPly: res.data.current_ply,
+          totalPlies: res.data.total_plies,
+          moveLabel: res.data.move_label,
+        });
+        fetchAllData();
+      })
+      .catch((err) => console.error("Błąd nawigacji po partii:", err));
   };
 
   return (
@@ -113,6 +177,15 @@ export default function App() {
             onPieceDrop={onPieceDrop}
             onUndo={handleUndo}
             onReset={handleReset}
+            navigation={gameNavigation}
+            onNavigate={handleNavigate}
+          />
+          <ChessComPanel
+            games={chessComGames}
+            isLoading={isLoadingChessCom}
+            importedGame={importedGame}
+            onImport={handleImportGame}
+            onRefresh={fetchChessComGames}
           />
         </div>
 
@@ -124,7 +197,7 @@ export default function App() {
 
         {/* Kolumna 3: Czat LLM */}
         <div className="chat-col">
-          <LLMChatPanel />
+          <LLMChatPanel importedGame={importedGame} />
         </div>
 
       </div>

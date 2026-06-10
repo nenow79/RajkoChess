@@ -13,8 +13,52 @@ client = AsyncOpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
 
+AVAILABLE_MODELS = [
+    {
+        "id": "anthropic/claude-sonnet-4.6",
+        "label": "Claude Sonnet 4.6",
+        "description": "Najwyższa jakość",
+        "input_price": 3.0,
+        "output_price": 15.0,
+    },
+    {
+        "id": "openai/gpt-5.4-mini",
+        "label": "GPT-5.4 Mini",
+        "description": "Rekomendowany balans",
+        "input_price": 0.75,
+        "output_price": 4.5,
+    },
+    {
+        "id": "google/gemini-3-flash-preview",
+        "label": "Gemini 3 Flash Preview",
+        "description": "Szybki i tani",
+        "input_price": 0.5,
+        "output_price": 3.0,
+    },
+    {
+        "id": "deepseek/deepseek-v4-pro",
+        "label": "DeepSeek V4 Pro",
+        "description": "Najtańszy",
+        "input_price": 0.435,
+        "output_price": 0.87,
+    },
+]
+AVAILABLE_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
+FALLBACK_MODEL = "openai/gpt-5.4-mini"
 
-async def generate_chess_analysis(fen: str, lichess_data: dict, stockfish_data: dict, user_prompt: str = None) -> str:
+
+def get_default_model() -> str:
+    configured_model = os.getenv("LLM_MODEL", FALLBACK_MODEL)
+    return configured_model if configured_model in AVAILABLE_MODEL_IDS else FALLBACK_MODEL
+
+
+async def generate_chess_analysis(
+        fen: str,
+        lichess_data: dict,
+        stockfish_data: dict,
+        user_prompt: str = None,
+        model: str = None
+) -> str:
     """
     Wysyła zebrane dane do LLM przez OpenRouter i zwraca analizę szachową.
     """
@@ -46,8 +90,7 @@ async def generate_chess_analysis(fen: str, lichess_data: dict, stockfish_data: 
     final_user_prompt = user_prompt if user_prompt else "Przeanalizuj tę pozycję. Wskaż dysonans między ruchami ludzi a oceną silnika i wyjaśnij główne plany."
 
     try:
-        # Pobieramy nazwę modelu z .env, a jeśli jej nie ma, używamy Claude'a jako zabezpieczenia
-        selected_model = os.getenv("LLM_MODEL", "anthropic/claude-sonnet-4.6")
+        selected_model = model or get_default_model()
 
         response = await client.chat.completions.create(
             model=selected_model,
@@ -59,6 +102,55 @@ async def generate_chess_analysis(fen: str, lichess_data: dict, stockfish_data: 
                 "HTTP-Referer": "http://localhost:5173",
                 "X-Title": "Rajko Chess Analyser",
             }
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Wystąpił błąd komunikacji z OpenRouter: {str(e)}"
+
+
+async def generate_game_analysis(
+        pgn: str,
+        engine_analysis: dict,
+        metadata: dict,
+        user_prompt: str = None,
+        model: str = None,
+) -> str:
+    system_prompt = """
+    Jesteś wymagającym, ale przystępnym trenerem szachowym. Analizujesz zakończoną
+    partię na podstawie PGN oraz pomiarów Stockfisha. Oceny silnika są podane
+    z perspektywy białych. Nie wymyślaj wariantów, których nie ma w danych.
+
+    Przygotuj analizę po polsku:
+    1. Krótkie podsumowanie przebiegu partii.
+    2. Najważniejsze momenty zwrotne, ze szczególnym uwzględnieniem ruchów gracza.
+    3. Wyjaśnienie przyczyn błędów i lepszych planów, nie tylko samych wariantów.
+    4. Trzy konkretne zalecenia treningowe.
+    Stosuj zwięzły Markdown i szachową notację SAN.
+    """
+    context = f"""
+    Metadane importu:
+    {json.dumps(metadata, indent=2, ensure_ascii=False)}
+
+    PGN partii:
+    {pgn}
+
+    Krytyczne momenty według Stockfisha:
+    {json.dumps(engine_analysis, indent=2, ensure_ascii=False)}
+    """
+    final_user_prompt = user_prompt or "Przeanalizuj całą partię i wskaż, nad czym powinienem pracować."
+    selected_model = model or get_default_model()
+
+    try:
+        response = await client.chat.completions.create(
+            model=selected_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}"},
+            ],
+            extra_headers={
+                "HTTP-Referer": "http://localhost:5173",
+                "X-Title": "Rajko Chess Analyser",
+            },
         )
         return response.choices[0].message.content
     except Exception as e:

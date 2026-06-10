@@ -1,9 +1,16 @@
 # chess_logic/game.py
+from io import StringIO
+
 import chess
+import chess.pgn
 
 class ChessGame:
     def __init__(self):
         self.board = chess.Board()
+        self.imported_pgn = None
+        self.imported_metadata = None
+        self.imported_moves = []
+        self.current_ply = 0
 
     def get_fen(self) -> str:
         """Zwraca obecną pozycję w formacie FEN."""
@@ -15,6 +22,10 @@ class ChessGame:
             move = chess.Move.from_uci(uci_move)
             if move in self.board.legal_moves:
                 self.board.push(move)
+                self.imported_pgn = None
+                self.imported_metadata = None
+                self.imported_moves = []
+                self.current_ply = 0
                 return True
             return False
         except ValueError:
@@ -25,6 +36,10 @@ class ChessGame:
         """Cofa ostatni ruch. Zwraca True jeśli cofnięto, False jeśli brak ruchów."""
         if len(self.board.move_stack) > 0:
             self.board.pop()
+            self.imported_pgn = None
+            self.imported_metadata = None
+            self.imported_moves = []
+            self.current_ply = 0
             return True
         return False
 
@@ -35,5 +50,76 @@ class ChessGame:
     def reset(self):
         """Resetuje szachownicę do pozycji startowej."""
         self.board.reset()
+        self.imported_pgn = None
+        self.imported_metadata = None
+        self.imported_moves = []
+        self.current_ply = 0
 
+    def load_pgn(self, pgn: str, metadata: dict | None = None) -> dict:
+        """Loads a completed PGN and sets the board to its final position."""
+        parsed_game = chess.pgn.read_game(StringIO(pgn))
+        if parsed_game is None:
+            raise ValueError("Nie udało się odczytać zapisu PGN")
 
+        board = parsed_game.board()
+        moves = list(parsed_game.mainline_moves())
+        for move in moves:
+            board.push(move)
+
+        self.board = board
+        self.imported_pgn = pgn
+        self.imported_metadata = metadata or {}
+        self.imported_moves = moves
+        self.current_ply = len(moves)
+
+        return self._imported_position_response(dict(parsed_game.headers))
+
+    def go_to_imported_ply(self, ply: int) -> dict:
+        """Moves the imported game review board to the requested half-move."""
+        if not self.imported_pgn:
+            raise ValueError("Najpierw zaimportuj zakończoną partię")
+
+        target_ply = min(max(ply, 0), len(self.imported_moves))
+        parsed_game = chess.pgn.read_game(StringIO(self.imported_pgn))
+        if parsed_game is None:
+            raise ValueError("Nie udało się odczytać zapisu PGN")
+
+        board = parsed_game.board()
+        for move in self.imported_moves[:target_ply]:
+            board.push(move)
+
+        self.board = board
+        self.current_ply = target_ply
+        return self._imported_position_response(dict(parsed_game.headers))
+
+    def _imported_position_response(self, headers: dict) -> dict:
+        last_move_san = None
+        move_label = "Pozycja startowa"
+        if self.current_ply:
+            previous_board = self.board.copy()
+            last_move = previous_board.pop()
+            last_move_san = previous_board.san(last_move)
+            move_number = (self.current_ply + 1) // 2
+            move_label = (
+                f"{move_number}. {last_move_san}"
+                if self.current_ply % 2 else f"{move_number}... {last_move_san}"
+            )
+
+        return {
+            "fen": self.get_fen(),
+            "history": self.get_history(),
+            "headers": headers,
+            "metadata": self.imported_metadata,
+            "current_ply": self.current_ply,
+            "total_plies": len(self.imported_moves),
+            "move_label": move_label,
+            "last_move_san": last_move_san,
+        }
+
+    def get_imported_game(self) -> dict | None:
+        if not self.imported_pgn:
+            return None
+        return {
+            "pgn": self.imported_pgn,
+            "metadata": self.imported_metadata or {},
+        }
