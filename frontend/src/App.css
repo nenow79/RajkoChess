@@ -1,0 +1,306 @@
+/* =========================================
+   GŁÓWNY UKŁAD I NAGŁÓWEK
+========================================= */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  font-family: sans-serif;
+  background-color: #f8f9fa;
+  min-height: 100vh;
+}
+
+.app-header {
+  width: 100%;
+  max-width: 1200px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #bdc3c7;
+  padding-bottom: 10px;
+}
+
+.app-header h1 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 26px;
+}
+
+.app-layout {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  max-width: 1200px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap; /* Zabezpieczenie dla mniejszych ekranów */
+}
+
+/* =========================================
+   3 KOLUMNY (Sztywny podział)
+========================================= */
+.board-col {
+  width: 450px;
+  max-width: 450px; /* Krytyczne! Blokuje rozrastanie się SVG szachownicy */
+  flex: 0 0 450px;
+}
+
+.stats-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 280px;
+  max-width: 350px;
+}
+
+.chat-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+  max-width: 350px;
+}
+
+/* =========================================
+   WSPÓLNE ELEMENTY PANELI
+========================================= */
+.side-panel {
+  background-color: #fff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.panel-title {
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 8px;
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 16px;
+  color: #2c3e50;
+}
+
+.loading-text {
+  color: #7f8c8d;
+  font-size: 14px;
+}
+
+/* =========================================
+   SZACHOWNICA I KONTROLKI
+========================================= */
+.board-wrapper {
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.controls-container {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  justify-content: center;
+}
+
+.control-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  background-color: #3498db;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  flex: 1;
+}
+
+.control-btn:hover { background-color: #2980b9; }
+
+.reset-btn { background-color: #e74c3c; }
+.reset-btn:hover { background-color: #c0392b; }
+
+/* =========================================
+   PANEL LICHESS
+========================================= */
+.opening-box {
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: #e8f4f8;
+  border-radius: 6px;
+}
+
+.opening-name {
+  font-size: 14px;
+  color: #2980b9;
+  font-weight: bold;
+}
+
+.opening-stats {
+  font-size: 12px;
+  color: #7f8c8d;
+  margin-top: 4px;
+}
+
+.moves-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.moves-table th, .moves-table td {
+  padding: 6px 4px;
+}
+
+.moves-table th {
+  border-bottom: 1px solid #bdc3c7;
+  text-align: left;
+}
+
+.moves-table tr { border-bottom: 1px solid #ecf0f1; }
+.move-san { font-weight: bold; color: #2c3e50; }
+
+.winrate-labels {
+  font-size: 10px;
+  display: flex;
+  justify-content: space-between;
+  color: #7f8c8d;
+}
+
+.empty-table {
+  padding: 20px 4px;
+  text-align: center;
+  color: #95a5a6;
+}
+
+.winrate-bar-container {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.winrate-white { background-color: #e0e0e0; }
+.winrate-draw { background-color: #a0a0a0; }
+.winrate-black { background-color: #3b3b3b; }
+
+/* =========================================
+   PANEL STOCKFISH
+========================================= */
+.engine-panel .panel-title { border-color: #e67e22; }
+
+.engine-loading {
+  text-align: center;
+  padding: 20px;
+  color: #e67e22;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.evaluation-box {
+  margin-bottom: 15px;
+  padding: 15px;
+  background-color: #fcf3cf;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.evaluation-label {
+  font-size: 11px;
+  color: #7f8c8d;
+  text-transform: uppercase;
+}
+
+.evaluation-score {
+  font-size: 28px;
+  font-weight: bold;
+  color: #d35400;
+  margin: 5px 0;
+}
+
+.variations-container { font-size: 13px; }
+
+.variations-title {
+  font-weight: bold;
+  color: #2c3e50;
+  margin-bottom: 8px;
+}
+
+.variation-card {
+  margin-bottom: 8px;
+  padding: 8px;
+  background-color: #f8f9fa;
+  border-left: 4px solid #e67e22;
+  border-radius: 0 4px 4px 0;
+}
+
+.variation-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.variation-score { font-weight: bold; color: #d35400; }
+.variation-depth { color: #7f8c8d; font-size: 11px; }
+
+.variation-line {
+  color: #34495e;
+  font-family: monospace;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+/* =========================================
+   PANEL CZATU (Agent LLM)
+========================================= */
+.chat-messages {
+  flex: 1;
+  background: #f4f6f7;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.chat-message {
+  margin-top: 10px;
+}
+
+.chat-message:first-child {
+  margin-top: 0;
+}
+
+.chat-message.bot {
+  background: #e8f4f8;
+  padding: 10px;
+  border-radius: 6px;
+  border-left: 4px solid #9b59b6;
+  color: #2c3e50;
+  line-height: 1.4;
+}
+
+.chat-message.user {
+  background: #e1f0fa;
+  padding: 10px;
+  border-radius: 6px;
+  border-right: 4px solid #3498db; /* Pasek z prawej dla odróżnienia */
+  color: #2c3e50;
+  line-height: 1.4;
+  text-align: right; /* Tekst użytkownika równamy do prawej */
+}
+
+.chat-message.user strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Usuwamy domyślne, duże marginesy z paragrafów Markdowna */
+.chat-message p {
+  margin: 0 0 8px 0;
+}
+
+.chat-message p:last-child {
+  margin: 0;
+}
