@@ -1,4 +1,5 @@
 import { Chessboard } from "react-chessboard";
+import EvaluationChart from "./EvaluationChart";
 
 export default function ChessBoardContainer({
   boardKey,
@@ -8,6 +9,7 @@ export default function ChessBoardContainer({
   onReset,
   navigation,
   onNavigate,
+  evaluationSeries,
 }) {
   return (
     <div className="board-section">
@@ -22,6 +24,11 @@ export default function ChessBoardContainer({
       </div>
       {navigation ? (
         <div className="review-controls">
+          <EvaluationChart
+            data={evaluationSeries}
+            currentPly={navigation.currentPly}
+            onNavigate={onNavigate}
+          />
           <div className="game-navigation" aria-label="Nawigacja po partii">
             <button
               type="button"

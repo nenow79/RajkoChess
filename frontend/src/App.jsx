@@ -23,6 +23,7 @@ export default function App() {
   const [isLoadingChessCom, setIsLoadingChessCom] = useState(true);
   const [importedGame, setImportedGame] = useState(null);
   const [gameNavigation, setGameNavigation] = useState(null);
+  const [gameAnalysis, setGameAnalysis] = useState(null);
 
   const fetchExplorerData = () => {
     axios.get(`${API_URL}/explorer`)
@@ -81,6 +82,7 @@ export default function App() {
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
         setImportedGame(selectedGame);
+        setGameAnalysis(null);
         setGameNavigation({
           currentPly: res.data.current_ply,
           totalPlies: res.data.total_plies,
@@ -105,6 +107,7 @@ export default function App() {
           setFen(res.data.fen);
           setImportedGame(null);
           setGameNavigation(null);
+          setGameAnalysis(null);
           fetchAllData();
         })
         .catch((err) => {
@@ -125,6 +128,7 @@ export default function App() {
         setFen(res.data.fen);
         setImportedGame(null);
         setGameNavigation(null);
+        setGameAnalysis(null);
         fetchAllData();
       })
       .catch(err => console.error("Błąd cofania:", err));
@@ -138,6 +142,7 @@ export default function App() {
         setBoardKey(prev => prev + 1);
         setImportedGame(null);
         setGameNavigation(null);
+        setGameAnalysis(null);
         fetchAllData();
       })
       .catch(err => console.error("Błąd resetu:", err));
@@ -179,6 +184,7 @@ export default function App() {
             onReset={handleReset}
             navigation={gameNavigation}
             onNavigate={handleNavigate}
+            evaluationSeries={gameAnalysis?.evaluation_series}
           />
           <ChessComPanel
             games={chessComGames}
@@ -197,7 +203,7 @@ export default function App() {
 
         {/* Kolumna 3: Czat LLM */}
         <div className="chat-col">
-          <LLMChatPanel importedGame={importedGame} />
+          <LLMChatPanel importedGame={importedGame} onGameAnalyzed={setGameAnalysis} />
         </div>
 
       </div>

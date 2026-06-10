@@ -10,7 +10,7 @@ const WELCOME_MESSAGE = {
   text: "Witaj! Jestem RajkoAI. Przeanalizuję dla Ciebie obecną pozycję na szachownicy, wskażę plany oraz pułapki debiutowe. O co chcesz zapytać?"
 };
 
-export default function LLMChatPanel({ importedGame }) {
+export default function LLMChatPanel({ importedGame, onGameAnalyzed }) {
   const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -90,6 +90,7 @@ export default function LLMChatPanel({ importedGame }) {
         model: selectedModel,
       });
       setMessages(prev => [...prev, { role: "bot", text: res.data.response }]);
+      onGameAnalyzed(res.data.engine_analysis);
     } catch (err) {
       console.error("Błąd analizy partii:", err);
       setMessages(prev => [...prev, {

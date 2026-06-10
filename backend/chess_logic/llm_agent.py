@@ -127,6 +127,11 @@ async def generate_game_analysis(
     4. Trzy konkretne zalecenia treningowe.
     Stosuj zwięzły Markdown i szachową notację SAN.
     """
+    llm_engine_context = {
+        "headers": engine_analysis.get("headers"),
+        "move_count": engine_analysis.get("move_count"),
+        "critical_moments": engine_analysis.get("critical_moments"),
+    }
     context = f"""
     Metadane importu:
     {json.dumps(metadata, indent=2, ensure_ascii=False)}
@@ -135,7 +140,7 @@ async def generate_game_analysis(
     {pgn}
 
     Krytyczne momenty według Stockfisha:
-    {json.dumps(engine_analysis, indent=2, ensure_ascii=False)}
+    {json.dumps(llm_engine_context, indent=2, ensure_ascii=False)}
     """
     final_user_prompt = user_prompt or "Przeanalizuj całą partię i wskaż, nad czym powinienem pracować."
     selected_model = model or get_default_model()

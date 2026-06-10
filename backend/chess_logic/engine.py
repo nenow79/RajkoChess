@@ -125,11 +125,29 @@ async def analyze_game(pgn: str, time_limit: float = 0.15, critical_count: int =
         await engine.quit()
 
     critical = sorted(moments, key=lambda item: item["loss"], reverse=True)[:critical_count]
+    evaluation_series = [{
+        "ply": 0,
+        "move_number": 0,
+        "move_label": "Pozycja startowa",
+        "evaluation": round(moments[0]["evaluation_before"], 2) if moments else round(before_score, 2),
+    }]
+    evaluation_series.extend({
+        "ply": moment["ply"],
+        "move_number": moment["move_number"],
+        "move_label": (
+            f'{moment["move_number"]}. {moment["played"]}'
+            if moment["color"] == "white"
+            else f'{moment["move_number"]}... {moment["played"]}'
+        ),
+        "evaluation": moment["evaluation_after"],
+    } for moment in moments)
+
     return {
         "headers": dict(parsed_game.headers),
         "move_count": len(moments),
         "final_fen": board.fen(),
         "critical_moments": critical,
+        "evaluation_series": evaluation_series,
     }
 
 
