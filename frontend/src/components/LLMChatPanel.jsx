@@ -17,6 +17,7 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed }) {
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState("");
   const messagesEndRef = useRef(null);
+  const analysisControllerRef = useRef(null);
 
   // Automatyczne przewijanie czatu w dół przy nowej wiadomości
   const scrollToBottom = () => {
@@ -57,21 +58,29 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed }) {
     // Dodajemy wiadomość użytkownika do UI
     setMessages(prev => [...prev, { role: "user", text: userMsg }]);
     setIsLoading(true);
+    const controller = new AbortController();
+    analysisControllerRef.current = controller;
 
     try {
       // Endpoint domyślnie da silnikowi 2 sekundy i poprosi o 3 linie (ustawione w FastAPI)
       const res = await axios.post(`${API_URL}/chat`, {
         message: userMsg,
         model: selectedModel
+      }, {
+        signal: controller.signal,
       });
 
       // Dodajemy odpowiedź Agenta
       setMessages(prev => [...prev, { role: "bot", text: res.data.response }]);
     } catch (err) {
+      if (axios.isCancel(err)) return;
       console.error("Błąd czatu:", err);
       setMessages(prev => [...prev, { role: "bot", text: "❌ Błąd połączenia z Agentem LLM. Upewnij się, że klucz API w pliku .env jest poprawny." }]);
     } finally {
-      setIsLoading(false);
+      if (analysisControllerRef.current === controller) {
+        analysisControllerRef.current = null;
+        setIsLoading(false);
+      }
     }
   };
 
@@ -83,23 +92,43 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed }) {
       text: `Przeanalizuj całą partię przeciwko ${importedGame.opponent}.`,
     }]);
     setIsLoading(true);
+    const controller = new AbortController();
+    analysisControllerRef.current = controller;
 
     try {
       const res = await axios.post(`${API_URL}/analyze-game`, {
         message: "Przeanalizuj całą partię z perspektywy gracza nenow79.",
         model: selectedModel,
+      }, {
+        signal: controller.signal,
       });
       setMessages(prev => [...prev, { role: "bot", text: res.data.response }]);
       onGameAnalyzed(res.data.engine_analysis);
     } catch (err) {
+      if (axios.isCancel(err)) return;
       console.error("Błąd analizy partii:", err);
       setMessages(prev => [...prev, {
         role: "bot",
         text: "Nie udało się przeanalizować całej partii. Sprawdź backend, Stockfisha i konfigurację LLM.",
       }]);
     } finally {
-      setIsLoading(false);
+      if (analysisControllerRef.current === controller) {
+        analysisControllerRef.current = null;
+        setIsLoading(false);
+      }
     }
+  };
+
+  const handleCancelAnalysis = () => {
+    analysisControllerRef.current?.abort();
+    analysisControllerRef.current = null;
+    setIsLoading(false);
+    setMessages(prev => [...prev, {
+      role: "bot",
+      text: "Analiza została przerwana.",
+    }]);
+    axios.post(`${API_URL}/cancel-analysis`)
+      .catch((err) => console.error("Nie udało się przerwać analizy na backendzie:", err));
   };
 
   const handleKeyDown = (e) => {
@@ -130,6 +159,16 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed }) {
           >
             Analizuj całą partię
           </button>
+          {isLoading && (
+            <button
+              type="button"
+              className="cancel-analysis-btn"
+              onClick={handleCancelAnalysis}
+              title="Przerwij trwającą analizę"
+            >
+              Przerwij analizę
+            </button>
+          )}
           <label className="model-picker">
             <span>Model</span>
             <select

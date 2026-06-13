@@ -79,6 +79,7 @@ class ChessGame:
         if not self.imported_pgn:
             raise ValueError("Najpierw zaimportuj zakończoną partię")
 
+        previous_ply = self.current_ply
         target_ply = min(max(ply, 0), len(self.imported_moves))
         parsed_game = chess.pgn.read_game(StringIO(self.imported_pgn))
         if parsed_game is None:
@@ -90,9 +91,22 @@ class ChessGame:
 
         self.board = board
         self.current_ply = target_ply
-        return self._imported_position_response(dict(parsed_game.headers))
+        navigation_move = None
+        if target_ply > previous_ply:
+            navigation_move = self.imported_moves[target_ply - 1]
+        elif target_ply < previous_ply and target_ply != 0:
+            navigation_move = self.imported_moves[previous_ply - 1]
 
-    def _imported_position_response(self, headers: dict) -> dict:
+        return self._imported_position_response(
+            dict(parsed_game.headers),
+            navigation_move=navigation_move,
+        )
+
+    def _imported_position_response(
+        self,
+        headers: dict,
+        navigation_move: chess.Move | None = None,
+    ) -> dict:
         last_move_san = None
         move_label = "Pozycja startowa"
         if self.current_ply:
@@ -114,6 +128,7 @@ class ChessGame:
             "total_plies": len(self.imported_moves),
             "move_label": move_label,
             "last_move_san": last_move_san,
+            "navigation_move_uci": navigation_move.uci() if navigation_move else None,
         }
 
     def get_imported_game(self) -> dict | None:

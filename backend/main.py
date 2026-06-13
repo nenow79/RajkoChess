@@ -1,4 +1,5 @@
 # main.py
+import asyncio
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware # Dodany import
@@ -45,6 +46,7 @@ app.add_middleware(
 
 # Na ten moment trzymamy stan jednej gry w pamięci
 game = ChessGame()
+active_analysis_task: asyncio.Task | None = None
 
 class MoveRequest(BaseModel):
     uci: str  # np. "e2e4", "g1f3"
@@ -167,6 +169,8 @@ async def imported_game_position(request: GamePositionRequest):
 
 @app.post("/api/analyze-game")
 async def analyze_imported_game(request: ChatRequest, time_limit: float = 0.15):
+    global active_analysis_task
+
     imported_game = game.get_imported_game()
     if not imported_game:
         raise HTTPException(status_code=400, detail="Najpierw zaimportuj zakończoną partię")
@@ -175,6 +179,8 @@ async def analyze_imported_game(request: ChatRequest, time_limit: float = 0.15):
     if selected_model not in AVAILABLE_MODEL_IDS:
         raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
 
+    current_task = asyncio.current_task()
+    active_analysis_task = current_task
     try:
         engine_data = await analyze_game(imported_game["pgn"], time_limit=min(max(time_limit, 0.05), 1.0))
         response = await generate_game_analysis(
@@ -185,8 +191,13 @@ async def analyze_imported_game(request: ChatRequest, time_limit: float = 0.15):
             model=selected_model,
         )
         return {"response": response, "model": selected_model, "engine_analysis": engine_data}
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Analiza została przerwana")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if active_analysis_task is current_task:
+            active_analysis_task = None
 
 
 @app.post("/api/chat")
@@ -195,6 +206,8 @@ async def chat_with_agent(
         time_limit: float = 2.0,  # Domyślnie dajemy Krakenowi 2 sekundy, jeśli frontend nic nie prześle
         lines: int = 3  # Domyślnie 3 linie MultiPV
 ):
+    global active_analysis_task
+
     """
     Endpoint analizy LLM. Zbiera dane z gry i zewnętrznych źródeł,
     przyjmując parametry czasu i głębokości silnika prosto z URL.
@@ -205,6 +218,8 @@ async def chat_with_agent(
     if selected_model not in AVAILABLE_MODEL_IDS:
         raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
 
+    current_task = asyncio.current_task()
+    active_analysis_task = current_task
     try:
         # Przekazujemy parametry pobrane dynamicznie z adresu URL
         stockfish_data = await analyze_position(current_fen, time_limit=time_limit, multipv=lines)
@@ -221,8 +236,23 @@ async def chat_with_agent(
 
         return {"response": analysis_text, "model": selected_model}
 
+    except asyncio.CancelledError:
+        raise HTTPException(status_code=499, detail="Analiza została przerwana")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if active_analysis_task is current_task:
+            active_analysis_task = None
+
+
+@app.post("/api/cancel-analysis")
+async def cancel_analysis():
+    task = active_analysis_task
+    if task is None or task.done():
+        return {"cancelled": False}
+
+    task.cancel()
+    return {"cancelled": True}
 
 
 @app.get("/api/models")

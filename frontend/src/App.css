@@ -107,6 +107,23 @@
   overflow: hidden;
 }
 
+.flip-board-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 12px;
+  border: 1px solid #95a5a6;
+  border-radius: 5px;
+  background: #fff;
+  color: #34495e;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.flip-board-btn:hover {
+  background: #edf1f2;
+}
+
 .controls-container {
   display: flex;
   gap: 10px;
@@ -133,7 +150,7 @@
 
 .game-navigation {
   display: grid;
-  grid-template-columns: 1fr minmax(150px, 1.4fr) 1fr;
+  grid-template-columns: 0.75fr 0.75fr minmax(150px, 1.4fr) 0.75fr;
   gap: 10px;
 }
 
@@ -161,6 +178,14 @@
 .navigation-btn:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+
+.navigation-jump-btn {
+  background: #2c3e50;
+}
+
+.navigation-jump-btn:hover:not(:disabled) {
+  background: #1f2d3a;
 }
 
 .move-counter {
@@ -684,6 +709,22 @@
   border-color: #9b59b6;
   color: #7d3c98;
   white-space: nowrap;
+}
+
+.cancel-analysis-btn {
+  padding: 6px 9px;
+  border: 1px solid #e74c3c;
+  border-radius: 5px;
+  background: #fff;
+  color: #c0392b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.cancel-analysis-btn:hover {
+  background: #fdf0ee;
 }
 
 @media (max-width: 1380px) {

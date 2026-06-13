@@ -24,6 +24,7 @@ export default function App() {
   const [importedGame, setImportedGame] = useState(null);
   const [gameNavigation, setGameNavigation] = useState(null);
   const [gameAnalysis, setGameAnalysis] = useState(null);
+  const [navigationMove, setNavigationMove] = useState(null);
 
   const fetchExplorerData = () => {
     axios.get(`${API_URL}/explorer`)
@@ -83,6 +84,7 @@ export default function App() {
         setBoardKey(prev => prev + 1);
         setImportedGame(selectedGame);
         setGameAnalysis(null);
+        setNavigationMove(null);
         setGameNavigation({
           currentPly: res.data.current_ply,
           totalPlies: res.data.total_plies,
@@ -108,6 +110,7 @@ export default function App() {
           setImportedGame(null);
           setGameNavigation(null);
           setGameAnalysis(null);
+          setNavigationMove(null);
           fetchAllData();
         })
         .catch((err) => {
@@ -129,6 +132,7 @@ export default function App() {
         setImportedGame(null);
         setGameNavigation(null);
         setGameAnalysis(null);
+        setNavigationMove(null);
         fetchAllData();
       })
       .catch(err => console.error("Błąd cofania:", err));
@@ -143,6 +147,7 @@ export default function App() {
         setImportedGame(null);
         setGameNavigation(null);
         setGameAnalysis(null);
+        setNavigationMove(null);
         fetchAllData();
       })
       .catch(err => console.error("Błąd resetu:", err));
@@ -153,7 +158,7 @@ export default function App() {
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
-        setBoardKey(prev => prev + 1);
+        setNavigationMove(res.data.navigation_move_uci);
         setGameNavigation({
           currentPly: res.data.current_ply,
           totalPlies: res.data.total_plies,
@@ -183,6 +188,7 @@ export default function App() {
             onUndo={handleUndo}
             onReset={handleReset}
             navigation={gameNavigation}
+            navigationMove={navigationMove}
             onNavigate={handleNavigate}
             evaluationSeries={gameAnalysis?.evaluation_series}
           />

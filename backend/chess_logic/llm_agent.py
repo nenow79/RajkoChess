@@ -35,13 +35,6 @@ AVAILABLE_MODELS = [
         "input_price": 0.5,
         "output_price": 3.0,
     },
-    {
-        "id": "deepseek/deepseek-v4-pro",
-        "label": "DeepSeek V4 Pro",
-        "description": "Najtańszy",
-        "input_price": 0.435,
-        "output_price": 0.87,
-    },
 ]
 AVAILABLE_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
 FALLBACK_MODEL = "openai/gpt-5.4-mini"
