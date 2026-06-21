@@ -102,6 +102,7 @@
 ========================================= */
 .board-wrapper {
   width: 100%;
+  max-width: min(450px, calc(100vw - 20px));
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   border-radius: 4px;
   overflow: hidden;
@@ -159,6 +160,58 @@
   flex-direction: column;
   gap: 8px;
   margin-top: 15px;
+}
+
+.variation-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #d4a64f;
+  border-radius: 5px;
+  background: #fff7e6;
+  color: #6f4a00;
+  font-size: 12px;
+}
+
+.variation-banner div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.variation-banner span {
+  overflow: hidden;
+  color: #8a6a25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.return-game-btn {
+  padding: 8px 10px;
+  border: 1px solid #d4a64f;
+  border-radius: 5px;
+  background: #fff;
+  color: #6f4a00;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.return-game-btn:hover {
+  background: #fff0cc;
+}
+
+.return-game-btn.secondary {
+  border-color: #bdc3c7;
+  color: #34495e;
+}
+
+.return-game-btn.secondary:hover {
+  background: #edf1f2;
 }
 
 .navigation-btn {
@@ -652,7 +705,45 @@
   border-color: #7fa650;
 }
 
+.chesscom-user-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.chesscom-user-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: #7f8c8d;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.chesscom-user-field input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid #b6c9a4;
+  border-radius: 5px;
+  background: #fff;
+  color: #2c3e50;
+  font-size: 13px;
+  text-transform: none;
+}
+
+.chesscom-user-field input:focus {
+  border-color: #7fa650;
+  outline: 2px solid rgba(127, 166, 80, 0.18);
+}
+
 .chesscom-refresh,
+.chesscom-user-submit,
 .game-analysis-btn {
   padding: 6px 9px;
   border: 1px solid #7fa650;
@@ -665,6 +756,7 @@
 }
 
 .chesscom-refresh:disabled,
+.chesscom-user-submit:disabled,
 .game-analysis-btn:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -774,16 +866,24 @@
 @media (max-width: 850px) {
   .app-container {
     padding: 10px;
+    min-height: 100dvh;
   }
 
   .app-layout {
     grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
   }
 
   .board-col {
     width: 100%;
-    max-width: 600px;
+    max-width: min(600px, 100%);
     justify-self: center;
+  }
+
+  .board-section,
+  .board-wrapper {
+    width: 100%;
+    max-width: min(600px, calc(100vw - 20px));
   }
 
   .chat-col {
@@ -791,8 +891,8 @@
   }
 
   .chat-container {
-    height: 70vh;
-    min-height: 480px;
+    height: min(70dvh, 620px);
+    min-height: 360px;
   }
 
   .chat-panel-header,
@@ -804,5 +904,14 @@
   .model-picker select {
     max-width: none;
     width: 100%;
+  }
+
+  .variation-banner {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .variation-banner span {
+    white-space: normal;
   }
 }

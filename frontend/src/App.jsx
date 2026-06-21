@@ -10,6 +10,7 @@ import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
 import ChessComPanel from "./components/ChessComPanel";
 
 const API_URL = import.meta.env.VITE_API_URL;
+const DEFAULT_CHESSCOM_USERNAME = "nenow79";
 
 export default function App() {
   const gameRef = useRef(new Chess());
@@ -19,12 +20,14 @@ export default function App() {
   const [explorerData, setExplorerData] = useState(null);
   const [analysisData, setAnalysisData] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [chessComUsername, setChessComUsername] = useState(DEFAULT_CHESSCOM_USERNAME);
   const [chessComGames, setChessComGames] = useState([]);
   const [isLoadingChessCom, setIsLoadingChessCom] = useState(true);
   const [importedGame, setImportedGame] = useState(null);
   const [gameNavigation, setGameNavigation] = useState(null);
   const [gameAnalysis, setGameAnalysis] = useState(null);
   const [navigationMove, setNavigationMove] = useState(null);
+  const [isVariationMode, setIsVariationMode] = useState(false);
 
   const fetchExplorerData = () => {
     axios.get(`${API_URL}/explorer`)
@@ -45,12 +48,31 @@ export default function App() {
     fetchAnalysis();
   };
 
-  const fetchChessComGames = () => {
+  const clearImportedGameContext = () => {
+    setImportedGame(null);
+    setGameNavigation(null);
+    setGameAnalysis(null);
+    setNavigationMove(null);
+    setIsVariationMode(false);
+  };
+
+  const fetchChessComGames = (username = chessComUsername) => {
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername) return;
+
     setIsLoadingChessCom(true);
-    axios.get(`${API_URL}/chesscom/nenow79/recent?limit=12`)
+    axios.get(`${API_URL}/chesscom/${encodeURIComponent(normalizedUsername)}/recent?limit=12`)
       .then((res) => setChessComGames(res.data.games))
       .catch((err) => console.error("Błąd Chess.com:", err))
       .finally(() => setIsLoadingChessCom(false));
+  };
+
+  const handleChessComUsernameChange = (username) => {
+    const normalizedUsername = username.trim() || DEFAULT_CHESSCOM_USERNAME;
+    setChessComUsername(normalizedUsername);
+    setChessComGames([]);
+    clearImportedGameContext();
+    fetchChessComGames(normalizedUsername);
   };
 
   useEffect(() => {
@@ -67,7 +89,7 @@ export default function App() {
     axios.get(`${API_URL}/analyze?time_limit=1.0&lines=3`)
       .then((res) => setAnalysisData(res.data))
       .catch((err) => console.error("Błąd Stockfish:", err));
-    axios.get(`${API_URL}/chesscom/nenow79/recent?limit=12`)
+    axios.get(`${API_URL}/chesscom/${encodeURIComponent(DEFAULT_CHESSCOM_USERNAME)}/recent?limit=12`)
       .then((res) => setChessComGames(res.data.games))
       .catch((err) => console.error("Błąd Chess.com:", err))
       .finally(() => setIsLoadingChessCom(false));
@@ -85,6 +107,7 @@ export default function App() {
         setImportedGame(selectedGame);
         setGameAnalysis(null);
         setNavigationMove(null);
+        setIsVariationMode(false);
         setGameNavigation({
           currentPly: res.data.current_ply,
           totalPlies: res.data.total_plies,
@@ -102,15 +125,24 @@ export default function App() {
 
       setFen(gameRef.current.fen());
       const uciMove = `${sourceSquare}${targetSquare}${moveResult.promotion ? moveResult.promotion : ""}`;
+      const preserveImportedContext = Boolean(gameNavigation);
 
-      axios.post(`${API_URL}/move`, { uci: uciMove })
+      axios.post(`${API_URL}/move`, {
+        uci: uciMove,
+        preserve_imported_context: preserveImportedContext,
+      })
         .then((res) => {
           gameRef.current = new Chess(res.data.fen);
           setFen(res.data.fen);
-          setImportedGame(null);
-          setGameNavigation(null);
-          setGameAnalysis(null);
           setNavigationMove(null);
+          if (preserveImportedContext) {
+            setIsVariationMode(true);
+          } else {
+            setImportedGame(null);
+            setGameNavigation(null);
+            setGameAnalysis(null);
+            setIsVariationMode(false);
+          }
           fetchAllData();
         })
         .catch((err) => {
@@ -125,14 +157,24 @@ export default function App() {
   }
 
   const handleUndo = () => {
-    axios.post(`${API_URL}/undo`)
+    const preserveImportedContext = Boolean(gameNavigation && isVariationMode);
+
+    axios.post(`${API_URL}/undo`, {
+      preserve_imported_context: preserveImportedContext,
+    })
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
-        setImportedGame(null);
-        setGameNavigation(null);
-        setGameAnalysis(null);
         setNavigationMove(null);
+        if (preserveImportedContext) {
+          const variationStillActive = gameRef.current.history().length > gameNavigation.currentPly;
+          setIsVariationMode(variationStillActive);
+        } else {
+          setImportedGame(null);
+          setGameNavigation(null);
+          setGameAnalysis(null);
+          setIsVariationMode(false);
+        }
         fetchAllData();
       })
       .catch(err => console.error("Błąd cofania:", err));
@@ -148,6 +190,7 @@ export default function App() {
         setGameNavigation(null);
         setGameAnalysis(null);
         setNavigationMove(null);
+        setIsVariationMode(false);
         fetchAllData();
       })
       .catch(err => console.error("Błąd resetu:", err));
@@ -159,6 +202,7 @@ export default function App() {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
         setNavigationMove(res.data.navigation_move_uci);
+        setIsVariationMode(false);
         setGameNavigation({
           currentPly: res.data.current_ply,
           totalPlies: res.data.total_plies,
@@ -188,16 +232,21 @@ export default function App() {
             onUndo={handleUndo}
             onReset={handleReset}
             navigation={gameNavigation}
+            isVariationMode={isVariationMode}
             navigationMove={navigationMove}
             onNavigate={handleNavigate}
+            onReturnToGame={() => handleNavigate(gameNavigation.currentPly)}
             evaluationSeries={gameAnalysis?.evaluation_series}
           />
           <ChessComPanel
+            key={chessComUsername}
+            username={chessComUsername}
             games={chessComGames}
             isLoading={isLoadingChessCom}
             importedGame={importedGame}
             onImport={handleImportGame}
             onRefresh={fetchChessComGames}
+            onUsernameChange={handleChessComUsernameChange}
           />
         </div>
 
@@ -209,7 +258,11 @@ export default function App() {
 
         {/* Kolumna 3: Czat LLM */}
         <div className="chat-col">
-          <LLMChatPanel importedGame={importedGame} onGameAnalyzed={setGameAnalysis} />
+          <LLMChatPanel
+            importedGame={importedGame}
+            playerUsername={chessComUsername}
+            onGameAnalyzed={setGameAnalysis}
+          />
         </div>
 
       </div>

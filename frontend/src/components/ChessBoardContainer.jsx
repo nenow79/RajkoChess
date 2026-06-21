@@ -9,8 +9,10 @@ export default function ChessBoardContainer({
   onUndo,
   onReset,
   navigation,
+  isVariationMode,
   navigationMove,
   onNavigate,
+  onReturnToGame,
   evaluationSeries,
 }) {
   const [boardOrientation, setBoardOrientation] = useState("white");
@@ -35,7 +37,7 @@ export default function ChessBoardContainer({
           position={fen}
           onPieceDrop={onPieceDrop}
           animationDuration={400}
-          arePiecesDraggable={!navigation}
+          arePiecesDraggable
           boardOrientation={boardOrientation}
           customSquareStyles={navigationSquareStyles}
         />
@@ -50,6 +52,28 @@ export default function ChessBoardContainer({
       </button>
       {navigation ? (
         <div className="review-controls">
+          {isVariationMode && (
+            <div className="variation-banner">
+              <div>
+                <strong>Wariant</strong>
+                <span>Analizujesz własną linię od: {navigation.moveLabel}</span>
+              </div>
+              <button
+                type="button"
+                className="return-game-btn secondary"
+                onClick={onUndo}
+              >
+                Cofnij wariant
+              </button>
+              <button
+                type="button"
+                className="return-game-btn"
+                onClick={onReturnToGame}
+              >
+                Wróć do partii
+              </button>
+            </div>
+          )}
           <EvaluationChart
             data={evaluationSeries}
             currentPly={navigation.currentPly}

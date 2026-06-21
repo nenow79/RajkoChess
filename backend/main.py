@@ -50,6 +50,10 @@ active_analysis_task: asyncio.Task | None = None
 
 class MoveRequest(BaseModel):
     uci: str  # np. "e2e4", "g1f3"
+    preserve_imported_context: bool = False
+
+class UndoRequest(BaseModel):
+    preserve_imported_context: bool = False
 
 @app.get("/api/position")
 async def get_position():
@@ -59,7 +63,7 @@ async def get_position():
 @app.post("/api/move")
 async def make_move(request: MoveRequest):
     """Wykonuje ruch na szachownicy."""
-    success = game.make_move(request.uci)
+    success = game.make_move(request.uci, preserve_imported_context=request.preserve_imported_context)
     if not success:
         raise HTTPException(status_code=400, detail="Nieprawidłowy lub nielegalny ruch")
     
@@ -69,9 +73,10 @@ async def make_move(request: MoveRequest):
     }
 
 @app.post("/api/undo")
-async def undo_move():
+async def undo_move(request: UndoRequest | None = None):
     """Cofa ostatni ruch na szachownicy."""
-    success = game.undo_move()
+    preserve_imported_context = request.preserve_imported_context if request else False
+    success = game.undo_move(preserve_imported_context=preserve_imported_context)
     if not success:
         raise HTTPException(status_code=400, detail="Brak ruchów do cofnięcia")
     

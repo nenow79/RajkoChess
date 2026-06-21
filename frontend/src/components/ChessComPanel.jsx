@@ -1,16 +1,52 @@
-export default function ChessComPanel({ games, isLoading, importedGame, onImport, onRefresh }) {
+import { useState } from "react";
+
+export default function ChessComPanel({
+  username,
+  games,
+  isLoading,
+  importedGame,
+  onImport,
+  onRefresh,
+  onUsernameChange,
+}) {
+  const [draftUsername, setDraftUsername] = useState(username);
+
   const formatDate = (value) => value
     ? new Intl.DateTimeFormat("pl-PL", { dateStyle: "short", timeStyle: "short" }).format(new Date(value))
     : "brak daty";
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const normalizedUsername = draftUsername.trim();
+    setDraftUsername(normalizedUsername);
+    onUsernameChange(normalizedUsername);
+  };
+
   return (
     <div className="side-panel chesscom-panel">
       <div className="chesscom-header">
-        <h3 className="panel-title">Chess.com · nenow79</h3>
-        <button type="button" className="chesscom-refresh" onClick={onRefresh} disabled={isLoading}>
+        <h3 className="panel-title">Chess.com · {username}</h3>
+        <button type="button" className="chesscom-refresh" onClick={() => onRefresh()} disabled={isLoading}>
           Odśwież
         </button>
       </div>
+
+      <form className="chesscom-user-form" onSubmit={handleSubmit}>
+        <label className="chesscom-user-field">
+          <span>Użytkownik</span>
+          <input
+            type="text"
+            value={draftUsername}
+            onChange={(e) => setDraftUsername(e.target.value)}
+            disabled={isLoading}
+            placeholder="nenow79"
+            autoComplete="username"
+          />
+        </label>
+        <button type="submit" className="chesscom-user-submit" disabled={isLoading || !draftUsername.trim()}>
+          Pobierz
+        </button>
+      </form>
 
       {isLoading ? (
         <p className="loading-text">Pobieram ostatnie partie...</p>

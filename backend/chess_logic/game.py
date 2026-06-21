@@ -11,35 +11,44 @@ class ChessGame:
         self.imported_metadata = None
         self.imported_moves = []
         self.current_ply = 0
+        self.in_variation = False
 
     def get_fen(self) -> str:
         """Zwraca obecną pozycję w formacie FEN."""
         return self.board.fen()
 
-    def make_move(self, uci_move: str) -> bool:
+    def make_move(self, uci_move: str, preserve_imported_context: bool = False) -> bool:
         """Próbuje wykonać ruch w formacie UCI. Zwraca True jeśli się powiodło."""
         try:
             move = chess.Move.from_uci(uci_move)
             if move in self.board.legal_moves:
                 self.board.push(move)
-                self.imported_pgn = None
-                self.imported_metadata = None
-                self.imported_moves = []
-                self.current_ply = 0
+                if preserve_imported_context and self.imported_pgn:
+                    self.in_variation = True
+                else:
+                    self.imported_pgn = None
+                    self.imported_metadata = None
+                    self.imported_moves = []
+                    self.current_ply = 0
+                    self.in_variation = False
                 return True
             return False
         except ValueError:
             # Rzucane, gdy ciąg znaków nie jest prawidłowym ruchem UCI
             return False
 
-    def undo_move(self) -> bool:
+    def undo_move(self, preserve_imported_context: bool = False) -> bool:
         """Cofa ostatni ruch. Zwraca True jeśli cofnięto, False jeśli brak ruchów."""
         if len(self.board.move_stack) > 0:
             self.board.pop()
-            self.imported_pgn = None
-            self.imported_metadata = None
-            self.imported_moves = []
-            self.current_ply = 0
+            if preserve_imported_context and self.imported_pgn:
+                self.in_variation = len(self.board.move_stack) > self.current_ply
+            else:
+                self.imported_pgn = None
+                self.imported_metadata = None
+                self.imported_moves = []
+                self.current_ply = 0
+                self.in_variation = False
             return True
         return False
 
@@ -54,6 +63,7 @@ class ChessGame:
         self.imported_metadata = None
         self.imported_moves = []
         self.current_ply = 0
+        self.in_variation = False
 
     def load_pgn(self, pgn: str, metadata: dict | None = None) -> dict:
         """Loads a completed PGN and sets the board to its final position."""
@@ -71,6 +81,7 @@ class ChessGame:
         self.imported_metadata = metadata or {}
         self.imported_moves = moves
         self.current_ply = len(moves)
+        self.in_variation = False
 
         return self._imported_position_response(dict(parsed_game.headers))
 
@@ -91,6 +102,7 @@ class ChessGame:
 
         self.board = board
         self.current_ply = target_ply
+        self.in_variation = False
         navigation_move = None
         if target_ply > previous_ply:
             navigation_move = self.imported_moves[target_ply - 1]
@@ -126,6 +138,8 @@ class ChessGame:
             "metadata": self.imported_metadata,
             "current_ply": self.current_ply,
             "total_plies": len(self.imported_moves),
+            "in_variation": self.in_variation,
+            "variation_ply_count": max(0, len(self.board.move_stack) - self.current_ply) if self.imported_pgn else 0,
             "move_label": move_label,
             "last_move_san": last_move_san,
             "navigation_move_uci": navigation_move.uci() if navigation_move else None,

@@ -10,7 +10,7 @@ const WELCOME_MESSAGE = {
   text: "Witaj! Jestem RajkoAI. Przeanalizuję dla Ciebie obecną pozycję na szachownicy, wskażę plany oraz pułapki debiutowe. O co chcesz zapytać?"
 };
 
-export default function LLMChatPanel({ importedGame, onGameAnalyzed }) {
+export default function LLMChatPanel({ importedGame, playerUsername, onGameAnalyzed }) {
   const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -97,7 +97,7 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed }) {
 
     try {
       const res = await axios.post(`${API_URL}/analyze-game`, {
-        message: "Przeanalizuj całą partię z perspektywy gracza nenow79.",
+        message: `Przeanalizuj całą partię z perspektywy gracza ${playerUsername}.`,
         model: selectedModel,
       }, {
         signal: controller.signal,
