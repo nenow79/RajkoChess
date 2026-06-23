@@ -1,7 +1,7 @@
 # main.py
 import asyncio
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware # Dodany import
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -44,9 +44,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Na ten moment trzymamy stan jednej gry w pamięci
-game = ChessGame()
-active_analysis_task: asyncio.Task | None = None
+DEFAULT_SESSION_ID = "default"
+
+# Stan gry trzymamy osobno dla każdej przeglądarki/użytkownika.
+games: dict[str, ChessGame] = {}
+active_analysis_tasks: dict[str, asyncio.Task] = {}
+
+
+def get_session_id(x_session_id: str | None = Header(default=None, alias="X-Session-Id")) -> str:
+    session_id = (x_session_id or DEFAULT_SESSION_ID).strip()
+    return session_id[:128] or DEFAULT_SESSION_ID
+
+
+def get_game(session_id: str = Depends(get_session_id)) -> ChessGame:
+    if session_id not in games:
+        games[session_id] = ChessGame()
+    return games[session_id]
 
 class MoveRequest(BaseModel):
     uci: str  # np. "e2e4", "g1f3"
@@ -56,12 +69,12 @@ class UndoRequest(BaseModel):
     preserve_imported_context: bool = False
 
 @app.get("/api/position")
-async def get_position():
+async def get_position(game: ChessGame = Depends(get_game)):
     """Zwraca bieżącą pozycję na szachownicy."""
     return {"fen": game.get_fen()}
 
 @app.post("/api/move")
-async def make_move(request: MoveRequest):
+async def make_move(request: MoveRequest, game: ChessGame = Depends(get_game)):
     """Wykonuje ruch na szachownicy."""
     success = game.make_move(request.uci, preserve_imported_context=request.preserve_imported_context)
     if not success:
@@ -73,7 +86,7 @@ async def make_move(request: MoveRequest):
     }
 
 @app.post("/api/undo")
-async def undo_move(request: UndoRequest | None = None):
+async def undo_move(request: UndoRequest | None = None, game: ChessGame = Depends(get_game)):
     """Cofa ostatni ruch na szachownicy."""
     preserve_imported_context = request.preserve_imported_context if request else False
     success = game.undo_move(preserve_imported_context=preserve_imported_context)
@@ -86,13 +99,17 @@ async def undo_move(request: UndoRequest | None = None):
     }
 
 @app.get("/api/history")
-async def get_history():
+async def get_history(game: ChessGame = Depends(get_game)):
     """Zwraca historię ruchów w obecnej partii."""
     return {"history": game.get_history()}
 
 
 @app.get("/api/explorer")
-async def get_explorer_stats(ratings: Optional[str] = None, moves: int = 5):
+async def get_explorer_stats(
+    ratings: Optional[str] = None,
+    moves: int = 5,
+    game: ChessGame = Depends(get_game),
+):
     """
     Zwraca statystyki z bazy Lichess dla bieżącej pozycji na szachownicy.
 
@@ -115,7 +132,11 @@ async def get_explorer_stats(ratings: Optional[str] = None, moves: int = 5):
 
 
 @app.get("/api/analyze")
-async def analyze_current_position(time_limit: float = 0.5, lines: int = 3):
+async def analyze_current_position(
+    time_limit: float = 0.5,
+    lines: int = 3,
+    game: ChessGame = Depends(get_game),
+):
     """
     Zwraca ocenę bieżącej pozycji ze Stockfisha.
     - **time_limit**: czas (w sekundach), jaki silnik ma na przemyślenie ruchu.
@@ -133,7 +154,7 @@ async def analyze_current_position(time_limit: float = 0.5, lines: int = 3):
         raise HTTPException(status_code=500, detail=f"Wystąpił błąd silnika: {str(e)}")
 
 @app.post("/api/reset")
-async def reset_game():
+async def reset_game(game: ChessGame = Depends(get_game)):
     """Wymusza reset gry do pozycji startowej."""
     game.reset()
     return {
@@ -153,7 +174,7 @@ async def chesscom_recent_games(username: str, limit: int = 12):
 
 
 @app.post("/api/import-game")
-async def import_game(request: ImportGameRequest):
+async def import_game(request: ImportGameRequest, game: ChessGame = Depends(get_game)):
     try:
         metadata = {
             key: value for key, value in (request.metadata or {}).items()
@@ -165,7 +186,7 @@ async def import_game(request: ImportGameRequest):
 
 
 @app.post("/api/imported-game/position")
-async def imported_game_position(request: GamePositionRequest):
+async def imported_game_position(request: GamePositionRequest, game: ChessGame = Depends(get_game)):
     try:
         return game.go_to_imported_ply(request.ply)
     except ValueError as e:
@@ -173,9 +194,12 @@ async def imported_game_position(request: GamePositionRequest):
 
 
 @app.post("/api/analyze-game")
-async def analyze_imported_game(request: ChatRequest, time_limit: float = 0.15):
-    global active_analysis_task
-
+async def analyze_imported_game(
+    request: ChatRequest,
+    time_limit: float = 0.15,
+    session_id: str = Depends(get_session_id),
+    game: ChessGame = Depends(get_game),
+):
     imported_game = game.get_imported_game()
     if not imported_game:
         raise HTTPException(status_code=400, detail="Najpierw zaimportuj zakończoną partię")
@@ -185,7 +209,7 @@ async def analyze_imported_game(request: ChatRequest, time_limit: float = 0.15):
         raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
 
     current_task = asyncio.current_task()
-    active_analysis_task = current_task
+    active_analysis_tasks[session_id] = current_task
     try:
         engine_data = await analyze_game(imported_game["pgn"], time_limit=min(max(time_limit, 0.05), 1.0))
         response = await generate_game_analysis(
@@ -201,18 +225,18 @@ async def analyze_imported_game(request: ChatRequest, time_limit: float = 0.15):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if active_analysis_task is current_task:
-            active_analysis_task = None
+        if active_analysis_tasks.get(session_id) is current_task:
+            active_analysis_tasks.pop(session_id, None)
 
 
 @app.post("/api/chat")
 async def chat_with_agent(
         request: ChatRequest,
+        session_id: str = Depends(get_session_id),
+        game: ChessGame = Depends(get_game),
         time_limit: float = 2.0,  # Domyślnie dajemy Krakenowi 2 sekundy, jeśli frontend nic nie prześle
         lines: int = 3  # Domyślnie 3 linie MultiPV
 ):
-    global active_analysis_task
-
     """
     Endpoint analizy LLM. Zbiera dane z gry i zewnętrznych źródeł,
     przyjmując parametry czasu i głębokości silnika prosto z URL.
@@ -224,7 +248,7 @@ async def chat_with_agent(
         raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
 
     current_task = asyncio.current_task()
-    active_analysis_task = current_task
+    active_analysis_tasks[session_id] = current_task
     try:
         # Przekazujemy parametry pobrane dynamicznie z adresu URL
         stockfish_data = await analyze_position(current_fen, time_limit=time_limit, multipv=lines)
@@ -246,13 +270,13 @@ async def chat_with_agent(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if active_analysis_task is current_task:
-            active_analysis_task = None
+        if active_analysis_tasks.get(session_id) is current_task:
+            active_analysis_tasks.pop(session_id, None)
 
 
 @app.post("/api/cancel-analysis")
-async def cancel_analysis():
-    task = active_analysis_task
+async def cancel_analysis(session_id: str = Depends(get_session_id)):
+    task = active_analysis_tasks.get(session_id)
     if task is None or task.done():
         return {"cancelled": False}
 

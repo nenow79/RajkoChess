@@ -11,6 +11,18 @@ import ChessComPanel from "./components/ChessComPanel";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const DEFAULT_CHESSCOM_USERNAME = "nenow79";
+const SESSION_STORAGE_KEY = "rajko-session-id";
+
+function getSessionId() {
+  const savedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (savedSessionId) return savedSessionId;
+
+  const newSessionId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(SESSION_STORAGE_KEY, newSessionId);
+  return newSessionId;
+}
+
+axios.defaults.headers.common["X-Session-Id"] = getSessionId();
 
 export default function App() {
   const gameRef = useRef(new Chess());
