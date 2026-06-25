@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { API_URL } from "../config";
 
-const API_URL = import.meta.env.VITE_API_URL;
 const MODEL_STORAGE_KEY = "rajko-selected-model";
 const WELCOME_MESSAGE = {
   role: "bot",

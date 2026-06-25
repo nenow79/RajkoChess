@@ -1,0 +1,17 @@
+[Unit]
+Description=Rajko Chess FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/Projekty/aplikacje/RajkoChess/backend
+EnvironmentFile=/etc/rajko-chess/backend.env
+ExecStart=/home/ubuntu/Projekty/aplikacje/RajkoChess/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

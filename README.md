@@ -40,6 +40,7 @@ LLM_MODEL=openai/gpt-5.4-mini
 ```
 
 `LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu domyślnego z kodu.
+Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
 ## Szybkie uruchomienie
 
@@ -85,6 +86,45 @@ Vite proxy domyślnie kieruje zapytania `/api` do `http://127.0.0.1:8000`.
 cd frontend && npm run lint
 cd frontend && npm run build
 ```
+
+## Wdrożenie pod `/chess/`
+
+Rekomendowany układ produkcyjny:
+
+- frontend: statyczny build Vite pod `https://domena.pl/chess/`,
+- backend: FastAPI jako usługa `systemd` na `127.0.0.1:8000`,
+- nginx: reverse proxy z `/chess/api/` do backendowego `/api/`.
+
+Build frontendu:
+
+```bash
+cd frontend
+cp env.production.example .env.production
+npm ci
+npm run build
+sudo mkdir -p /var/www/rajko-chess/chess
+sudo rsync -a --delete dist/ /var/www/rajko-chess/chess/
+```
+
+Backend:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r backend/requirements.txt
+sudo mkdir -p /etc/rajko-chess
+sudo cp deploy/backend.env.example /etc/rajko-chess/backend.env
+```
+
+Uzupełnij `/etc/rajko-chess/backend.env`, szczególnie `STOCKFISH_PATH` oraz opcjonalnie `OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`.
+Jeśli używasz LLM, ustaw też `OPENROUTER_HTTP_REFERER` na publiczny adres aplikacji, np. `https://domena.pl/chess/`.
+
+Przykładowe pliki produkcyjne są w:
+
+- `deploy/nginx/rajko-chess.conf`,
+- `deploy/systemd/rajko-chess-backend.service`.
+
+Przed użyciem usługi `systemd` dostosuj w niej `User`, `Group`, `WorkingDirectory` i ścieżkę do `.venv`, jeśli aplikacja leży gdzie indziej niż w tym repozytorium.
 
 ## Struktura projektu
 

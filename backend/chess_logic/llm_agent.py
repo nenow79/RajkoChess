@@ -3,14 +3,14 @@ import json
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-# Wymuszamy wczytanie pliku .env dokładnie w tym momencie,
-# żeby mieć pewność, że klucz będzie dostępny.
-load_dotenv(override=True)
+# Lokalny backend/.env jest przydatny w trybie developerskim, ale produkcyjne
+# zmienne z systemd EnvironmentFile muszą mieć pierwszeństwo.
+load_dotenv()
 
 # Inicjalizacja asynchronicznego klienta OpenAI ze wskazaniem na OpenRouter
 client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+    api_key=os.getenv("OPENROUTER_API_KEY") or "missing-openrouter-api-key",
 )
 
 AVAILABLE_MODELS = [
@@ -38,6 +38,12 @@ AVAILABLE_MODELS = [
 ]
 AVAILABLE_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
 FALLBACK_MODEL = "openai/gpt-5.4-mini"
+OPENROUTER_HTTP_REFERER = os.getenv("OPENROUTER_HTTP_REFERER", "http://localhost:5173")
+OPENROUTER_APP_TITLE = os.getenv("OPENROUTER_APP_TITLE", "Rajko Chess Analyser")
+
+
+def has_openrouter_api_key() -> bool:
+    return bool(os.getenv("OPENROUTER_API_KEY"))
 
 
 def get_default_model() -> str:
@@ -83,6 +89,9 @@ async def generate_chess_analysis(
     final_user_prompt = user_prompt if user_prompt else "Przeanalizuj tę pozycję. Wskaż dysonans między ruchami ludzi a oceną silnika i wyjaśnij główne plany."
 
     try:
+        if not has_openrouter_api_key():
+            return "Brak OPENROUTER_API_KEY w konfiguracji backendu. Uzupełnij klucz, żeby używać panelu LLM."
+
         selected_model = model or get_default_model()
 
         response = await client.chat.completions.create(
@@ -92,8 +101,8 @@ async def generate_chess_analysis(
                 {"role": "user", "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}"}
             ],
             extra_headers={
-                "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "Rajko Chess Analyser",
+                "HTTP-Referer": OPENROUTER_HTTP_REFERER,
+                "X-Title": OPENROUTER_APP_TITLE,
             }
         )
         return response.choices[0].message.content
@@ -139,6 +148,9 @@ async def generate_game_analysis(
     selected_model = model or get_default_model()
 
     try:
+        if not has_openrouter_api_key():
+            return "Brak OPENROUTER_API_KEY w konfiguracji backendu. Uzupełnij klucz, żeby analizować partie przez LLM."
+
         response = await client.chat.completions.create(
             model=selected_model,
             messages=[
@@ -146,8 +158,8 @@ async def generate_game_analysis(
                 {"role": "user", "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}"},
             ],
             extra_headers={
-                "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "Rajko Chess Analyser",
+                "HTTP-Referer": OPENROUTER_HTTP_REFERER,
+                "X-Title": OPENROUTER_APP_TITLE,
             },
         )
         return response.choices[0].message.content

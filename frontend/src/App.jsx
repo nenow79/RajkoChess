@@ -8,8 +8,8 @@ import LichessExplorer from "./components/LichessExplorer";
 import StockfishPanel from "./components/StockfishPanel";
 import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
 import ChessComPanel from "./components/ChessComPanel";
+import { API_URL } from "./config";
 
-const API_URL = import.meta.env.VITE_API_URL;
 const DEFAULT_CHESSCOM_USERNAME = "nenow79";
 const SESSION_STORAGE_KEY = "rajko-session-id";
 
