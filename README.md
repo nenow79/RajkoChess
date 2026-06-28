@@ -91,7 +91,7 @@ cd frontend && npm run build
 
 Rekomendowany układ produkcyjny:
 
-- frontend: statyczny build Vite pod `https://domena.pl/chess/`,
+- frontend: statyczny build Vite pod `https://rajko.pl/chess/`,
 - backend: FastAPI jako usługa `systemd` na `127.0.0.1:8000`,
 - nginx: reverse proxy z `/chess/api/` do backendowego `/api/`.
 
@@ -117,12 +117,25 @@ sudo cp deploy/backend.env.example /etc/rajko-chess/backend.env
 ```
 
 Uzupełnij `/etc/rajko-chess/backend.env`, szczególnie `STOCKFISH_PATH` oraz opcjonalnie `OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`.
-Jeśli używasz LLM, ustaw też `OPENROUTER_HTTP_REFERER` na publiczny adres aplikacji, np. `https://domena.pl/chess/`.
+Jeśli używasz LLM, ustaw też `OPENROUTER_HTTP_REFERER` na publiczny adres aplikacji, np. `https://rajko.pl/chess/`.
 
 Przykładowe pliki produkcyjne są w:
 
 - `deploy/nginx/rajko-chess.conf`,
 - `deploy/systemd/rajko-chess-backend.service`.
+
+Konfiguracja nginx zakłada HTTPS przez certyfikat Let’s Encrypt dla `rajko.pl` i `www.rajko.pl`. Certyfikat możesz wystawić np. tak:
+
+```bash
+sudo mkdir -p /var/www/letsencrypt
+sudo certbot certonly --webroot -w /var/www/letsencrypt -d rajko.pl -d www.rajko.pl
+sudo cp deploy/nginx/rajko-chess.conf /etc/nginx/sites-available/rajko-chess.conf
+sudo ln -s /etc/nginx/sites-available/rajko-chess.conf /etc/nginx/sites-enabled/rajko-chess.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Port 80 pozostaje aktywny dla odnowień certyfikatu i przekierowuje ruch aplikacji na `https://`.
 
 Przed użyciem usługi `systemd` dostosuj w niej `User`, `Group`, `WorkingDirectory` i ścieżkę do `.venv`, jeśli aplikacja leży gdzie indziej niż w tym repozytorium.
 
