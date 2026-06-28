@@ -56,6 +56,17 @@ class ChessGame:
         """Zwraca listę wykonanych ruchów w formacie UCI."""
         return [move.uci() for move in self.board.move_stack]
 
+    def get_ancestor_fens(self, limit: int = 30) -> list[str]:
+        """Returns earlier positions, starting with the position before the last move."""
+        board = self.board.copy(stack=True)
+        ancestor_fens = []
+
+        while board.move_stack and len(ancestor_fens) < limit:
+            board.pop()
+            ancestor_fens.append(board.fen())
+
+        return ancestor_fens
+
     def reset(self):
         """Resetuje szachownicę do pozycji startowej."""
         self.board.reset()

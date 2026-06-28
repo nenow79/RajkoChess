@@ -12,6 +12,7 @@ import { API_URL } from "./config";
 
 const DEFAULT_CHESSCOM_USERNAME = "nenow79";
 const SESSION_STORAGE_KEY = "rajko-session-id";
+const LICHESS_RATING_BUCKETS = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 
 function getSessionId() {
   const savedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -30,6 +31,7 @@ export default function App() {
   const [boardKey, setBoardKey] = useState(0);
 
   const [explorerData, setExplorerData] = useState(null);
+  const [explorerRatingRange, setExplorerRatingRange] = useState({ min: 400, max: 2500 });
   const [analysisData, setAnalysisData] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [chessComUsername, setChessComUsername] = useState(DEFAULT_CHESSCOM_USERNAME);
@@ -41,10 +43,20 @@ export default function App() {
   const [navigationMove, setNavigationMove] = useState(null);
   const [isVariationMode, setIsVariationMode] = useState(false);
 
-  const fetchExplorerData = () => {
-    axios.get(`${API_URL}/explorer`)
+  const fetchExplorerData = (ratingRange = explorerRatingRange) => {
+    const ratings = LICHESS_RATING_BUCKETS
+      .filter((rating) => rating >= ratingRange.min && rating <= ratingRange.max)
+      .join(",");
+
+    axios.get(`${API_URL}/explorer`, { params: { ratings } })
       .then((res) => setExplorerData(res.data))
       .catch((err) => console.error("Błąd Lichess:", err));
+  };
+
+  const handleExplorerRatingRangeChange = (range) => {
+    setExplorerRatingRange(range);
+    setExplorerData(null);
+    fetchExplorerData(range);
   };
 
   const fetchAnalysis = () => {
@@ -264,7 +276,11 @@ export default function App() {
 
         {/* Kolumna 2: Panele Lichess + Stockfish */}
         <div className="stats-col">
-          <LichessExplorer data={explorerData} />
+          <LichessExplorer
+            data={explorerData}
+            ratingRange={explorerRatingRange}
+            onRatingRangeChange={handleExplorerRatingRangeChange}
+          />
           <StockfishPanel data={analysisData} isAnalyzing={isAnalyzing} />
         </div>
 

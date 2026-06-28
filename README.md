@@ -36,7 +36,7 @@ Dla funkcji LLM dodaj:
 
 ```env
 OPENROUTER_API_KEY=sk-or-...
-LLM_MODEL=openai/gpt-5.4-mini
+LLM_MODEL=google/gemini-3-flash-preview
 ```
 
 `LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu domyślnego z kodu.

@@ -15,29 +15,22 @@ client = AsyncOpenAI(
 
 AVAILABLE_MODELS = [
     {
-        "id": "anthropic/claude-sonnet-4.6",
-        "label": "Claude Sonnet 4.6",
-        "description": "Najwyższa jakość",
-        "input_price": 3.0,
-        "output_price": 15.0,
-    },
-    {
-        "id": "openai/gpt-5.4-mini",
-        "label": "GPT-5.4 Mini",
-        "description": "Rekomendowany balans",
-        "input_price": 0.75,
-        "output_price": 4.5,
-    },
-    {
         "id": "google/gemini-3-flash-preview",
         "label": "Gemini 3 Flash Preview",
         "description": "Szybki i tani",
         "input_price": 0.5,
         "output_price": 3.0,
     },
+    {
+        "id": "anthropic/claude-sonnet-4.6",
+        "label": "Claude Sonnet 4.6",
+        "description": "Najwyższa jakość",
+        "input_price": 3.0,
+        "output_price": 15.0,
+    },
 ]
 AVAILABLE_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
-FALLBACK_MODEL = "openai/gpt-5.4-mini"
+FALLBACK_MODEL = "google/gemini-3-flash-preview"
 OPENROUTER_HTTP_REFERER = os.getenv("OPENROUTER_HTTP_REFERER", "http://localhost:5173")
 OPENROUTER_APP_TITLE = os.getenv("OPENROUTER_APP_TITLE", "Rajko Chess Analyser")
 
@@ -77,6 +70,10 @@ async def generate_chess_analysis(
     # Budujemy kontekst - pakujemy nasze słowniki Pythona do ładnych stringów JSON
     context = f"""
     Aktualna pozycja (FEN): {fen}
+
+    Nazwa otwarcia w danych Lichess może mieć opening_is_fallback=true.
+    Oznacza to ostatnie znane otwarcie z wcześniejszej pozycji w tej partii,
+    a nie klasyfikację dokładnie bieżącej pozycji.
 
     Dane z Lichess Explorer (częstość ruchów i winrate):
     {json.dumps(lichess_data, indent=2, ensure_ascii=False)}

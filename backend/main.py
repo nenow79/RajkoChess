@@ -114,13 +114,18 @@ async def get_explorer_stats(
     Zwraca statystyki z bazy Lichess dla bieżącej pozycji na szachownicy.
 
     Opcjonalne filtry:
-    - **ratings**: np. "1600,1800" (dostępne kubełki: 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500)
+    - **ratings**: np. "1600,1800" (dostępne kubełki: 400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500)
     - **moves**: ilość zwracanych najpopularniejszych ruchów (domyślnie 5)
     """
     current_fen = game.get_fen()
 
     try:
-        data = await get_opening_explorer_data(current_fen, max_moves=moves, ratings=ratings)
+        data = await get_opening_explorer_data(
+            current_fen,
+            max_moves=moves,
+            ratings=ratings,
+            fallback_fens=game.get_ancestor_fens(),
+        )
         return data
     except httpx.HTTPStatusError as e:
         raise HTTPException(
@@ -252,7 +257,10 @@ async def chat_with_agent(
     try:
         # Przekazujemy parametry pobrane dynamicznie z adresu URL
         stockfish_data = await analyze_position(current_fen, time_limit=time_limit, multipv=lines)
-        lichess_data = await get_opening_explorer_data(current_fen)
+        lichess_data = await get_opening_explorer_data(
+            current_fen,
+            fallback_fens=game.get_ancestor_fens(),
+        )
 
         # Wysyłamy bogaty kontekst do Agenta LLM
         analysis_text = await generate_chess_analysis(

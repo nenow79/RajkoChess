@@ -1,11 +1,16 @@
 import os
 import httpx
-from typing import Optional
+from typing import Optional, Sequence
 
 LICHESS_EXPLORER_URL = "https://explorer.lichess.ovh/lichess"
 
 
-async def get_opening_explorer_data(fen: str, max_moves: int = 5, ratings: Optional[str] = None) -> dict:
+async def get_opening_explorer_data(
+    fen: str,
+    max_moves: int = 5,
+    ratings: Optional[str] = None,
+    fallback_fens: Sequence[str] = (),
+) -> dict:
     """
     Pobiera statystyki z Lichess Explorer API.
     """
@@ -44,6 +49,28 @@ async def get_opening_explorer_data(fen: str, max_moves: int = 5, ratings: Optio
         opening_data = data.get("opening") or {}
         opening_name = opening_data.get("name")
         opening_eco = opening_data.get("eco")
+        opening_is_fallback = False
+
+        if not opening_name:
+            for fallback_fen in fallback_fens:
+                fallback_response = await client.get(
+                    LICHESS_EXPLORER_URL,
+                    headers=headers,
+                    params={
+                        "fen": fallback_fen,
+                        "moves": 1,
+                        "variant": "standard",
+                        "speeds": "blitz,rapid,classical",
+                    },
+                    timeout=5.0,
+                )
+                fallback_response.raise_for_status()
+                fallback_opening = fallback_response.json().get("opening") or {}
+                opening_name = fallback_opening.get("name")
+                opening_eco = fallback_opening.get("eco")
+                if opening_name:
+                    opening_is_fallback = True
+                    break
 
         total_games = data.get("white", 0) + data.get("draws", 0) + data.get("black", 0)
         processed_moves = []
@@ -67,6 +94,7 @@ async def get_opening_explorer_data(fen: str, max_moves: int = 5, ratings: Optio
             "fen": fen,
             "opening_name": opening_name,  # Dodane: nazwa otwarcia
             "opening_eco": opening_eco,  # Dodane: kod ECO, np. "C31"
+            "opening_is_fallback": opening_is_fallback,
             "total_games_analyzed": total_games,
             "top_moves": processed_moves
         }

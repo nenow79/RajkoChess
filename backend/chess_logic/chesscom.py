@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+from io import StringIO
 
+import chess.pgn
 import httpx
 
 
@@ -41,6 +43,7 @@ def _summarize_game(game: dict, username: str) -> dict:
     player = white if player_is_white else black
     opponent = black if player_is_white else white
     end_time = game.get("end_time")
+    total_plies = _count_mainline_plies(game.get("pgn"))
 
     return {
         "id": game.get("url", "").rstrip("/").split("/")[-1],
@@ -60,4 +63,17 @@ def _summarize_game(game: dict, username: str) -> dict:
         "opponent": opponent.get("username"),
         "opponent_rating": opponent.get("rating"),
         "accuracies": game.get("accuracies"),
+        "move_count": (total_plies + 1) // 2 if total_plies is not None else None,
+        "total_plies": total_plies,
     }
+
+
+def _count_mainline_plies(pgn: str | None) -> int | None:
+    if not pgn:
+        return None
+
+    try:
+        parsed_game = chess.pgn.read_game(StringIO(pgn))
+        return len(list(parsed_game.mainline_moves())) if parsed_game else None
+    except (ValueError, UnicodeError):
+        return None

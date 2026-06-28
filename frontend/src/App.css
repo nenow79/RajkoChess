@@ -353,6 +353,47 @@
   border-radius: 6px;
 }
 
+.opening-fallback-label {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #edf1f2;
+  color: #7f8c8d;
+  font-size: 9px;
+  font-weight: normal;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.lichess-rating-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.lichess-rating-filter label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: #7f8c8d;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.lichess-rating-filter select {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid #bdc3c7;
+  border-radius: 5px;
+  background: #fff;
+  color: #2c3e50;
+  font-size: 12px;
+}
+
 .opening-name {
   font-size: 14px;
   color: #2980b9;
@@ -424,7 +465,7 @@
 
 .evaluation-box {
   margin-bottom: 15px;
-  padding: 15px;
+  padding: 10px;
   background-color: #fcf3cf;
   border-radius: 6px;
   text-align: center;
@@ -437,10 +478,10 @@
 }
 
 .evaluation-score {
-  font-size: 28px;
+  font-size: 18px;
   font-weight: bold;
   color: #d35400;
-  margin: 5px 0;
+  margin: 2px 0;
 }
 
 .variations-container { font-size: 13px; }
@@ -708,9 +749,83 @@
   overflow-wrap: anywhere;
 }
 
+.chesscom-open {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: #7fa650;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.chesscom-open:hover {
+  background: #6d9142;
+}
+
+.chesscom-current-game {
+  margin: 0;
+  color: #61705a;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.chesscom-modal-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(24, 35, 44, 0.65);
+}
+
+.chesscom-modal {
+  display: flex;
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100dvh - 40px));
+  box-sizing: border-box;
+  flex-direction: column;
+  padding: 18px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+}
+
+.chesscom-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.chesscom-modal-header h2 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 20px;
+}
+
+.chesscom-modal-close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #edf1f2;
+  color: #34495e;
+  cursor: pointer;
+  font-size: 25px;
+  line-height: 1;
+}
+
 .chesscom-user-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: end;
   margin-bottom: 12px;
@@ -769,7 +884,7 @@
 .chesscom-games {
   display: flex;
   min-width: 0;
-  max-height: 250px;
+  flex: 1;
   flex-direction: column;
   gap: 6px;
   overflow-y: auto;
@@ -922,5 +1037,25 @@
 
   .variation-banner span {
     white-space: normal;
+  }
+
+  .chesscom-modal-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .chesscom-modal {
+    width: 100%;
+    max-height: 88dvh;
+    padding: 14px;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .chesscom-user-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .chesscom-refresh {
+    grid-column: 1 / -1;
   }
 }
