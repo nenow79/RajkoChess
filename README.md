@@ -139,6 +139,30 @@ Port 80 pozostaje aktywny dla odnowień certyfikatu i przekierowuje ruch aplikac
 
 Przed użyciem usługi `systemd` dostosuj w niej `User`, `Group`, `WorkingDirectory` i ścieżkę do `.venv`, jeśli aplikacja leży gdzie indziej niż w tym repozytorium.
 
+## Strona demo na `rajko.cloud`
+
+Publiczny landing page znajduje się w `deploy/www-demo/`. Nie wymaga Node.js
+ani backendu i prowadzi do aplikacji pod `https://rajko.pl/chess/`.
+
+Przed wdrożeniem rekordy DNS `A` (oraz opcjonalnie `AAAA`) dla `rajko.cloud`
+i `www.rajko.cloud` muszą wskazywać serwer nginx. Następnie:
+
+```bash
+sudo mkdir -p /var/www/rajko-cloud /var/www/letsencrypt
+sudo rsync -a --delete deploy/www-demo/ /var/www/rajko-cloud/
+sudo cp deploy/nginx/rajko-cloud-http-acme.conf \
+  /etc/nginx/sites-available/rajko-cloud.conf
+sudo ln -s /etc/nginx/sites-available/rajko-cloud.conf \
+  /etc/nginx/sites-enabled/rajko-cloud.conf
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot certonly --webroot -w /var/www/letsencrypt \
+  -d rajko.cloud -d www.rajko.cloud
+sudo cp deploy/nginx/rajko-cloud.conf /etc/nginx/sites-available/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
 ## Struktura projektu
 
 ```text

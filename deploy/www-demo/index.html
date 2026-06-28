@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111713" />
+    <title>Rajko Chess — demo analizy szachowej</title>
+    <meta
+      name="description"
+      content="Zobacz demo Rajko Chess: analiza Stockfish, baza debiutowa Lichess i trener szachowy AI."
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111713;
+        --panel: #18201b;
+        --ink: #f4f0e6;
+        --muted: #aab5ad;
+        --line: #334038;
+        --green: #8fbd72;
+        --green-dark: #709b58;
+        --gold: #e4b65d;
+        --light-square: #d9dfc7;
+        --dark-square: #66845f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 78% 24%, #26372c 0, transparent 33rem),
+          var(--bg);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .shell {
+        width: min(1160px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 78px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+
+      .header-link {
+        color: var(--muted);
+        font-size: 0.92rem;
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .header-link:hover {
+        color: var(--ink);
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(340px, 520px);
+        align-items: center;
+        gap: clamp(40px, 7vw, 100px);
+        min-height: calc(100vh - 79px);
+        padding: 56px 0 72px;
+      }
+
+      .eyebrow {
+        margin: 0 0 18px;
+        color: var(--green);
+        font-size: 0.8rem;
+        font-weight: 800;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 680px;
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(3.5rem, 7vw, 6.8rem);
+        font-weight: 500;
+        letter-spacing: -0.055em;
+        line-height: 0.91;
+      }
+
+      .lead {
+        max-width: 600px;
+        margin: 28px 0 0;
+        color: var(--muted);
+        font-size: clamp(1.05rem, 1.7vw, 1.26rem);
+        line-height: 1.62;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 36px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 52px;
+        padding: 0 22px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        font-weight: 800;
+        text-decoration: none;
+        transition:
+          border-color 150ms ease,
+          background 150ms ease,
+          transform 150ms ease;
+      }
+
+      .button:hover {
+        border-color: var(--green);
+        transform: translateY(-1px);
+      }
+
+      .button.primary {
+        border-color: var(--green);
+        color: #111713;
+        background: var(--green);
+      }
+
+      .button.primary:hover {
+        background: var(--green-dark);
+      }
+
+      .features {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 22px;
+        margin: 32px 0 0;
+        padding: 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+        list-style: none;
+      }
+
+      .features li::before {
+        margin-right: 8px;
+        color: var(--gold);
+        content: "◆";
+        font-size: 0.65rem;
+      }
+
+      .preview {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 36px 100px rgb(0 0 0 / 35%);
+        transform: rotate(1deg);
+      }
+
+      .preview-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 0 4px rgb(143 189 114 / 12%);
+      }
+
+      .score {
+        color: var(--gold);
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        aspect-ratio: 1;
+      }
+
+      .square {
+        display: grid;
+        place-items: center;
+        color: #101713;
+        font-family: Georgia, serif;
+        font-size: clamp(1.5rem, 4.2vw, 2.8rem);
+        line-height: 1;
+      }
+
+      .square:nth-child(16n + 1),
+      .square:nth-child(16n + 3),
+      .square:nth-child(16n + 5),
+      .square:nth-child(16n + 7),
+      .square:nth-child(16n + 10),
+      .square:nth-child(16n + 12),
+      .square:nth-child(16n + 14),
+      .square:nth-child(16n + 16) {
+        background: var(--light-square);
+      }
+
+      .square {
+        background: var(--dark-square);
+      }
+
+      .analysis {
+        display: grid;
+        gap: 10px;
+        padding: 16px;
+        border-top: 1px solid var(--line);
+      }
+
+      .line {
+        display: grid;
+        grid-template-columns: 50px 1fr 38px;
+        gap: 12px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .move {
+        color: var(--ink);
+        font-weight: 800;
+      }
+
+      .meter {
+        height: 6px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #2b352f;
+      }
+
+      .fill {
+        display: block;
+        width: var(--value);
+        height: 100%;
+        background: var(--green);
+      }
+
+      @media (max-width: 860px) {
+        main {
+          grid-template-columns: 1fr;
+          min-height: auto;
+          padding-top: 64px;
+        }
+
+        .preview {
+          width: min(100%, 520px);
+          transform: none;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .shell {
+          width: min(100% - 24px, 1160px);
+        }
+
+        header {
+          min-height: 66px;
+        }
+
+        main {
+          padding: 48px 0;
+        }
+
+        .actions {
+          display: grid;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        .button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <a class="brand" href="/">Rajko Chess</a>
+        <a class="header-link" href="https://rajko.pl/chess/">rajko.pl ↗</a>
+      </header>
+
+      <main>
+        <section aria-labelledby="title">
+          <p class="eyebrow">Demo analizy szachowej</p>
+          <h1 id="title">Zobacz więcej na szachownicy.</h1>
+          <p class="lead">
+            Analizuj pozycje ze Stockfishem, sprawdzaj popularne warianty
+            w bazie Lichess i rozmawiaj z trenerem AI, który wyjaśnia idee
+            stojące za ruchami.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="https://rajko.pl/chess/">
+              Uruchom aplikację
+            </a>
+            <a class="button" href="#podglad">Zobacz podgląd</a>
+          </div>
+          <ul class="features" aria-label="Najważniejsze funkcje">
+            <li>Stockfish MultiPV</li>
+            <li>Lichess Explorer</li>
+            <li>Import PGN</li>
+            <li>Trener AI</li>
+          </ul>
+        </section>
+
+        <aside class="preview" id="podglad" aria-label="Podgląd analizy pozycji">
+          <div class="preview-bar">
+            <span class="status"><span class="dot"></span>Analiza pozycji</span>
+            <span class="score">+0.49</span>
+          </div>
+          <div class="board" aria-hidden="true">
+            <div class="square">♜</div><div class="square">♞</div><div class="square">♝</div><div class="square">♛</div><div class="square">♚</div><div class="square">♝</div><div class="square">♞</div><div class="square">♜</div>
+            <div class="square">♟</div><div class="square">♟</div><div class="square">♟</div><div class="square">♟</div><div class="square">♟</div><div class="square">♟</div><div class="square">♟</div><div class="square">♟</div>
+            <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+            <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+            <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+            <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+            <div class="square">♙</div><div class="square">♙</div><div class="square">♙</div><div class="square">♙</div><div class="square">♙</div><div class="square">♙</div><div class="square">♙</div><div class="square">♙</div>
+            <div class="square">♖</div><div class="square">♘</div><div class="square">♗</div><div class="square">♕</div><div class="square">♔</div><div class="square">♗</div><div class="square">♘</div><div class="square">♖</div>
+          </div>
+          <div class="analysis">
+            <div class="line">
+              <span class="move">1. e4</span>
+              <span class="meter"><span class="fill" style="--value: 72%"></span></span>
+              <span>49%</span>
+            </div>
+            <div class="line">
+              <span class="move">1. d4</span>
+              <span class="meter"><span class="fill" style="--value: 48%"></span></span>
+              <span>31%</span>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+  </body>
+</html>
