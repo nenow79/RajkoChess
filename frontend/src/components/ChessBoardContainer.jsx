@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import EvaluationChart from "./EvaluationChart";
 
@@ -16,8 +17,25 @@ export default function ChessBoardContainer({
   evaluationSeries,
 }) {
   const [boardOrientation, setBoardOrientation] = useState("white");
+  const [selectedSquareState, setSelectedSquareState] = useState(null);
   const sourceSquare = navigationMove?.slice(0, 2);
   const targetSquare = navigationMove?.slice(2, 4);
+  const selectedSquare = selectedSquareState?.fen === fen ? selectedSquareState.square : null;
+
+  const chess = useMemo(() => {
+    try {
+      return new Chess(fen === "start" ? undefined : fen);
+    } catch {
+      return null;
+    }
+  }, [fen]);
+
+  const selectedMoveTargets = useMemo(() => {
+    if (!chess || !selectedSquare) return [];
+
+    return chess.moves({ square: selectedSquare, verbose: true }).map((move) => move.to);
+  }, [chess, selectedSquare]);
+
   const navigationSquareStyles = navigationMove ? {
     [sourceSquare]: {
       background: "radial-gradient(circle, rgba(255, 193, 7, 0.88) 0%, rgba(255, 193, 7, 0.58) 72%, rgba(255, 193, 7, 0.35) 100%)",
@@ -29,6 +47,46 @@ export default function ChessBoardContainer({
     },
   } : {};
 
+  const selectedSquareStyles = selectedSquare ? {
+    [selectedSquare]: {
+      background: "radial-gradient(circle, rgba(46, 204, 113, 0.9) 0%, rgba(46, 204, 113, 0.58) 72%, rgba(39, 174, 96, 0.38) 100%)",
+      boxShadow: "inset 0 0 0 4px rgba(21, 105, 56, 0.72)",
+    },
+    ...Object.fromEntries(selectedMoveTargets.map((square) => [
+      square,
+      {
+        background: "radial-gradient(circle, rgba(46, 204, 113, 0.58) 0%, rgba(46, 204, 113, 0.28) 38%, transparent 42%)",
+      },
+    ])),
+  } : {};
+
+  const handleSquareClick = (square) => {
+    if (!chess) return;
+
+    const piece = chess.get(square);
+    const isOwnPiece = piece?.color === chess.turn();
+
+    if (!selectedSquare) {
+      if (isOwnPiece) setSelectedSquareState({ square, fen });
+      return;
+    }
+
+    if (square === selectedSquare) {
+      setSelectedSquareState(null);
+      return;
+    }
+
+    if (isOwnPiece) {
+      setSelectedSquareState({ square, fen });
+      return;
+    }
+
+    const wasMoveAccepted = onPieceDrop(selectedSquare, square);
+    if (wasMoveAccepted) {
+      setSelectedSquareState(null);
+    }
+  };
+
   return (
     <div className="board-section">
       <div className="board-wrapper">
@@ -39,7 +97,8 @@ export default function ChessBoardContainer({
           animationDuration={400}
           arePiecesDraggable
           boardOrientation={boardOrientation}
-          customSquareStyles={navigationSquareStyles}
+          onSquareClick={handleSquareClick}
+          customSquareStyles={{ ...navigationSquareStyles, ...selectedSquareStyles }}
         />
       </div>
       <button

@@ -21,13 +21,6 @@ AVAILABLE_MODELS = [
         "input_price": 0.5,
         "output_price": 3.0,
     },
-    {
-        "id": "anthropic/claude-sonnet-4.6",
-        "label": "Claude Sonnet 4.6",
-        "description": "Najwyższa jakość",
-        "input_price": 3.0,
-        "output_price": 15.0,
-    },
 ]
 AVAILABLE_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
 FALLBACK_MODEL = "google/gemini-3-flash-preview"
