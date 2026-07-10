@@ -155,3 +155,31 @@ async def generate_game_analysis(
         return response.choices[0].message.content
     except Exception as e:
         return f"Wystąpił błąd komunikacji z OpenRouter: {str(e)}"
+
+
+async def generate_bot_profile(description: str, model: str = None) -> dict:
+    """Turns a natural-language persona into a validated bot-profile draft."""
+    if not has_openrouter_api_key():
+        raise ValueError("Brak OPENROUTER_API_KEY. Możesz utworzyć profil ręcznie.")
+    selected_model = model or get_default_model()
+    prompt = """
+    Na podstawie polskiego opisu zaproponuj profil szachowego bota. Zwróć WYŁĄCZNIE JSON:
+    {"name":"...","description":"...","avatar":"jedno emoji","target_elo":1400,
+    "style":{"aggression":50,"tacticality":50,"risk":50,"materialism":50,"simplification":50},
+    "opening_queries":{"white":["English opening names"],"black":["English opening names"]},
+    "phrases":{"greeting":"...","advantage":"...","setback":"...","draw_offer":"...","victory":"...","defeat":"..."}}
+    Wszystkie cechy stylu są liczbami 0-100, Elo 800-2800. Podaj po 1-3 realne,
+    powszechnie znane otwarcia dla każdego koloru. Kwestie mają być krótkie i po polsku.
+    """
+    response = await client.chat.completions.create(
+        model=selected_model,
+        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": description[:2000]}],
+        extra_headers={"HTTP-Referer": OPENROUTER_HTTP_REFERER, "X-Title": OPENROUTER_APP_TITLE},
+    )
+    content = response.choices[0].message.content.strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1].rsplit("```", 1)[0]
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Model nie zwrócił poprawnego profilu JSON. Spróbuj ponownie.") from exc

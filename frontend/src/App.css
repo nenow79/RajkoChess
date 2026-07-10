@@ -18,7 +18,29 @@
   margin: 0 auto;
   border-bottom: 2px solid #bdc3c7;
   padding-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
+
+.mode-switch { display: flex; gap: 4px; padding: 4px; border-radius: 8px; background: #e8edf1; }
+.mode-switch button { padding: 8px 16px; border: 0; border-radius: 6px; background: transparent; color: #52616b; cursor: pointer; font-weight: 700; }
+.mode-switch button.active { background: #fff; color: #2471a3; box-shadow: 0 1px 4px rgba(0,0,0,.14); }
+
+/* Bot game */
+.game-mode-container { overflow-y: auto; }
+.bot-lobby, .bot-game-layout { width: 100%; max-width: 1320px; margin: 0 auto; min-height: 0; }
+.lobby-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.lobby-heading h2 { margin-bottom: 4px; }.lobby-heading p { margin-top: 0; color: #667; }
+.create-bot-btn, .start-game-panel button, .primary-action, .creator-actions button { border: 0; border-radius: 6px; padding: 11px 18px; background: #2980b9; color: white; cursor: pointer; font-weight: 700; }
+.bot-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+.bot-card { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; padding: 16px; border: 2px solid transparent; border-radius: 10px; background: white; box-shadow: 0 2px 8px rgba(0,0,0,.1); cursor: pointer; }
+.bot-card.selected { border-color: #3498db; }.bot-avatar { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: #edf4f8; font-size: 30px; }.bot-avatar.small { width: 42px; height: 42px; font-size: 23px; }
+.bot-card-title h3 { margin: 4px 0; }.bot-card-title strong { color: #2980b9; font-size: 13px; }.bot-card > p, .bot-style-summary, .bot-card-actions { grid-column: 1 / -1; }.bot-card > p { min-height: 42px; color: #566; }.bot-style-summary { display: flex; flex-wrap: wrap; gap: 6px; }.bot-style-summary span { padding: 4px 7px; border-radius: 10px; background: #eef3f5; font-size: 11px; }.bot-card-actions { display: flex; justify-content: flex-end; gap: 6px; }.bot-card-actions button { border: 0; background: transparent; color: #667; cursor: pointer; }
+.start-game-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding: 16px; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.1); }.start-game-panel div { display: flex; flex-direction: column; gap: 3px; }.start-game-panel span { color: #778; font-size: 12px; }.start-game-panel label { display: flex; align-items: center; gap: 8px; }.start-game-panel select { padding: 8px; }
+.bot-game-layout { display: grid; grid-template-columns: minmax(360px, 560px) minmax(280px, 1fr); justify-content: center; gap: 24px; overflow-y: auto; }.bot-board-column { min-width: 0; }.bot-game-status { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px; background: #fff; border-radius: 8px; }.bot-game-status div:last-child { display: flex; flex-direction: column; }.bot-game-status span { color: #667; font-size: 13px; }.bot-speech { margin-top: 10px; padding: 12px; border-radius: 8px; background: #fff8dc; color: #6d5700; }.game-action-row { display: flex; gap: 10px; margin-top: 12px; }.game-action-row button { flex: 1; padding: 10px; border: 1px solid #9ba8af; border-radius: 6px; background: #fff; cursor: pointer; font-weight: 700; }.game-action-row .danger-action { border-color: #c0392b; color: #c0392b; }.game-action-row .primary-action { color: #fff; background: #2980b9; border-color: #2980b9; }
+.game-side-card { padding: 18px; border-radius: 10px; background: #fff; overflow-y: auto; }.style-meter { display: grid; grid-template-columns: 100px 1fr; align-items: center; gap: 8px; margin: 8px 0; text-transform: capitalize; font-size: 12px; }.style-meter i { height: 7px; border-radius: 5px; background: #e4e8ea; overflow: hidden; }.style-meter b { display: block; height: 100%; background: #3498db; }.move-history { display: flex; flex-wrap: wrap; gap: 5px 10px; font-family: monospace; }
+.creator-overlay { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(20,30,40,.65); }.bot-creator { width: min(760px, 100%); max-height: 90vh; overflow-y: auto; padding: 22px; border-radius: 12px; background: #fff; }.creator-heading { display: flex; justify-content: space-between; align-items: center; }.creator-heading h2 { margin-top: 0; }.creator-heading > button { border: 0; background: transparent; font-size: 28px; cursor: pointer; }.bot-creator label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 700; }.bot-creator input, .bot-creator textarea, .bot-creator select { box-sizing: border-box; width: 100%; padding: 9px; border: 1px solid #bdc3c7; border-radius: 5px; font: inherit; }.creator-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }.creator-actions .secondary-action { border: 1px solid #9ba8af; background: #fff; color: #34495e; }.creator-form { display: flex; flex-direction: column; gap: 13px; }.profile-row { display: grid; grid-template-columns: 60px 1fr 150px; gap: 10px; align-items: end; }.profile-row .avatar-input { font-size: 25px; text-align: center; }.style-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }.opening-search { display: grid; grid-template-columns: 120px 1fr; gap: 8px; }.opening-results { display: flex; flex-direction: column; border: 1px solid #ccd3d7; }.opening-results button { padding: 7px; border: 0; border-bottom: 1px solid #eee; background: #fff; text-align: left; cursor: pointer; }.opening-chips { display: flex; flex-wrap: wrap; gap: 6px; }.opening-chips span { padding: 6px 8px; border-radius: 12px; background: #edf4f8; font-size: 12px; }.opening-chips button { margin-left: 6px; border: 0; background: none; cursor: pointer; }.form-error, .global-error { color: #b03a2e; }.form-warning { color: #9a6700; font-size: 13px; }
 
 .app-header h1 {
   margin: 0;
@@ -1038,6 +1060,7 @@
   .variation-banner span {
     white-space: normal;
   }
+  .app-header { align-items: stretch; flex-direction: column; gap: 8px; }.mode-switch button { flex: 1; }.bot-grid { grid-template-columns: 1fr; }.lobby-heading, .start-game-panel { align-items: stretch; flex-direction: column; }.bot-game-layout { grid-template-columns: 1fr; }.style-grid { grid-template-columns: 1fr; }.profile-row { grid-template-columns: 55px 1fr; }.profile-row label:last-child { grid-column: 1 / -1; }
 
   .chesscom-modal-backdrop {
     align-items: end;

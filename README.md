@@ -1,6 +1,6 @@
-# Chess App
+# Rajko Chess
 
-Aplikacja webowa do analizy szachowej. Frontend działa w React/Vite, backend w FastAPI, a analiza pozycji i partii korzysta ze Stockfisha. Panel LLM używa OpenRouter API.
+Aplikacja webowa do analizy szachowej i gry ze spersonalizowanymi botami. Frontend działa w React/Vite, backend w FastAPI, ruchy i analizy oblicza lokalny Stockfish, a funkcje LLM korzystają z OpenRouter API.
 
 ## Funkcje
 
@@ -9,14 +9,37 @@ Aplikacja webowa do analizy szachowej. Frontend działa w React/Vite, backend w 
 - statystyki debiutowe z Lichess Opening Explorer,
 - import ostatnich partii z Chess.com,
 - import i analiza zakończonej partii PGN,
-- czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha.
+- czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha,
+- osobny tryb gry ze spersonalizowanymi botami o regulowanej sile, stylu i repertuarze,
+- kreator botów wspierany przez LLM oraz trwały katalog profili w SQLite,
+- lokalny katalog 3790 linii debiutowych z projektu `lichess-org/chess-openings`,
+- przekazanie zakończonej partii z botem bezpośrednio do trybu analizy.
+
+## Tryby aplikacji
+
+### Analiza
+
+Udostępnia obecną szachownicę analityczną, MultiPV Stockfisha, Lichess Opening Explorer, import partii Chess.com i trenera RajkoAI. Zaimportowane partie można przewijać, analizować w całości i rozgrywać od nich własne warianty.
+
+### Gra z botem
+
+Pozwala wybrać bota oraz kolor gracza (`białe`, `czarne` lub `losowo`). W tym trybie nie są wyświetlane ani odpytywane panele analizy, Lichess Explorer i Chess.com. Stockfish działa wyłącznie po stronie backendu i nie ujawnia ocen ani wariantów.
+
+Każdy bot ma:
+
+- orientacyjną siłę 800–2800 Elo,
+- parametry agresji, taktyki, ryzyka, materializmu i skłonności do uproszczeń,
+- osobny repertuar dla białych i czarnych,
+- krótkie kwestie dopasowane do osobowości.
+
+Przycisk `Create bot` pozwala opisać bota naturalnym językiem. RajkoAI przygotowuje nazwę, siłę, styl, kwestie i repertuar, po czym użytkownik może poprawić wszystkie ustawienia przed zapisem. Bez klucza OpenRouter boty można nadal tworzyć ręcznie.
 
 ## Wymagania
 
 - Python 3.11+,
 - Node.js 20+ i npm,
 - Stockfish zainstalowany lokalnie,
-- klucz OpenRouter API, jeśli chcesz używać panelu LLM.
+- klucz OpenRouter API, jeśli chcesz używać panelu LLM lub automatycznego kreatora botów.
 
 ## Konfiguracja
 
@@ -32,15 +55,19 @@ Ustaw ścieżkę do binarki Stockfisha:
 STOCKFISH_PATH=/usr/games/stockfish
 ```
 
-Dla funkcji LLM dodaj:
+Pełna konfiguracja może wyglądać tak:
 
 ```env
 OPENROUTER_API_KEY=sk-or-...
 LLM_MODEL=google/gemini-3-flash-preview
+BOT_DB_PATH=./data/bots.sqlite3
+LICHESS_API_TOKEN=
 ```
 
 `LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu domyślnego z kodu.
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
+
+`BOT_DB_PATH` wskazuje bazę SQLite ze wspólnymi profilami botów. Przy pierwszym uruchomieniu backend automatycznie tworzy schemat oraz trzy profile startowe. Aktywne partie są trzymane w pamięci i kończą się przy restarcie backendu, natomiast profile botów pozostają zapisane.
 
 ## Szybkie uruchomienie
 
@@ -85,6 +112,23 @@ Vite proxy domyślnie kieruje zapytania `/api` do `http://127.0.0.1:8000`.
 ```bash
 cd frontend && npm run lint
 cd frontend && npm run build
+cd backend && ../.venv/bin/python -m unittest discover -s tests -v
+```
+
+Opcjonalnie można zainstalować zależności developerskie i uruchomić testy przez pytest:
+
+```bash
+. .venv/bin/activate
+pip install -r backend/requirements-dev.txt
+cd backend && pytest
+```
+
+### Aktualizacja katalogu otwarć
+
+Plik `backend/data/openings.json` jest wersjonowaną kopią danych CC0 z projektu [`lichess-org/chess-openings`](https://github.com/lichess-org/chess-openings). Aby go odtworzyć, pobierz pliki `a.tsv`–`e.tsv` do jednego katalogu i uruchom:
+
+```bash
+.venv/bin/python backend/scripts/update_openings.py /ścieżka/do/plików-tsv backend/data/openings.json
 ```
 
 ## Wdrożenie pod `/chess/`
@@ -116,7 +160,7 @@ sudo mkdir -p /etc/rajko-chess
 sudo cp deploy/backend.env.example /etc/rajko-chess/backend.env
 ```
 
-Uzupełnij `/etc/rajko-chess/backend.env`, szczególnie `STOCKFISH_PATH` oraz opcjonalnie `OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`.
+Uzupełnij `/etc/rajko-chess/backend.env`, szczególnie `STOCKFISH_PATH` oraz opcjonalnie `OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`. Profile botów są przechowywane w SQLite. Przykładowa usługa systemd tworzy trwały katalog `/var/lib/rajko-chess`, zgodny z `BOT_DB_PATH` z pliku przykładowego. Bazę warto dołączyć do regularnych kopii zapasowych.
 Jeśli używasz LLM, ustaw też `OPENROUTER_HTTP_REFERER` na publiczny adres aplikacji, np. `https://rajko.pl/chess/`.
 
 Przykładowe pliki produkcyjne są w:
@@ -142,11 +186,15 @@ Przed użyciem usługi `systemd` dostosuj w niej `User`, `Group`, `WorkingDirect
 ## Struktura projektu
 
 ```text
-backend/   FastAPI, logika gry, integracje Stockfish/Lichess/Chess.com/OpenRouter
-frontend/  React + Vite
-start.sh   lokalne uruchomienie frontendu i backendu
+backend/              FastAPI, logika gry, boty i integracje z usługami
+backend/chess_logic/  Stockfish, partie, profile botów, Lichess i OpenRouter
+backend/data/         wersjonowany katalog otwarć i lokalna baza SQLite
+backend/tests/        testy profili i przebiegu gry z botem
+frontend/             React + Vite oraz ekrany analizy i gry
+deploy/               przykładowa konfiguracja nginx i systemd
+start.sh              lokalne uruchomienie frontendu i backendu
 ```
 
 ## Uwagi przed publikacją
 
-Pliki `.env` są ignorowane przez Git. Nie commituj kluczy API ani lokalnych ścieżek do Stockfisha. Do repo powinien trafić tylko `backend/.env.example`.
+Pliki `.env`, bazy SQLite i ich pliki WAL są ignorowane przez Git. Nie commituj kluczy API, lokalnych ścieżek do Stockfisha ani produkcyjnej bazy botów. Do repo powinny trafiać wyłącznie pliki przykładowej konfiguracji.

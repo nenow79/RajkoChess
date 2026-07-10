@@ -9,6 +9,7 @@ import StockfishPanel from "./components/StockfishPanel";
 import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
 import ChessComPanel from "./components/ChessComPanel";
 import { API_URL } from "./config";
+import BotGameMode from "./components/BotGameMode";
 
 const DEFAULT_CHESSCOM_USERNAME = "nenow79";
 const SESSION_STORAGE_KEY = "rajko-session-id";
@@ -25,7 +26,9 @@ function getSessionId() {
 
 axios.defaults.headers.common["X-Session-Id"] = getSessionId();
 
-export default function App() {
+function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsumed }) {
+  const initialBotGameRef = useRef(initialBotGame);
+  const consumeInitialGameRef = useRef(onInitialBotGameConsumed);
   const gameRef = useRef(new Chess());
   const [fen, setFen] = useState("start");
   const [boardKey, setBoardKey] = useState(0);
@@ -100,11 +103,30 @@ export default function App() {
   };
 
   useEffect(() => {
-    axios.get(`${API_URL}/position`)
+    const initialGame = initialBotGameRef.current;
+    const positionRequest = initialGame?.pgn
+      ? axios.post(`${API_URL}/import-game`, {
+          pgn: initialGame.pgn,
+          metadata: { opponent: initialGame.bot?.name, result: initialGame.result, source: "bot" },
+        })
+      : axios.get(`${API_URL}/position`);
+    positionRequest
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
+        if (initialGame?.pgn) {
+          setImportedGame({
+            ...initialGame,
+            opponent: initialGame.bot?.name,
+          });
+          setGameNavigation({
+            currentPly: res.data.current_ply,
+            totalPlies: res.data.total_plies,
+            moveLabel: res.data.move_label,
+          });
+          consumeInitialGameRef.current?.();
+        }
       })
       .catch((err) => console.error("Błąd backendu:", err));
     axios.get(`${API_URL}/explorer`)
@@ -117,7 +139,7 @@ export default function App() {
       .then((res) => setChessComGames(res.data.games))
       .catch((err) => console.error("Błąd Chess.com:", err))
       .finally(() => setIsLoadingChessCom(false));
-  }, []);
+  }, []); // The workspace is remounted when entering analysis mode.
 
   const handleImportGame = (selectedGame) => {
     axios.post(`${API_URL}/import-game`, {
@@ -242,7 +264,11 @@ export default function App() {
 
       {/* Globalny Nagłówek */}
       <header className="app-header">
-        <h1>♞ Rajko Chess Analyser</h1>
+        <h1>♞ Rajko Chess</h1>
+        <div className="mode-switch" aria-label="Tryb aplikacji">
+          <button className="active" type="button">Analiza</button>
+          <button type="button" onClick={() => onModeChange("game")}>Gra z botem</button>
+        </div>
       </header>
 
       <div className="app-layout">
@@ -295,5 +321,25 @@ export default function App() {
 
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  const [mode, setMode] = useState("analysis");
+  const [finishedBotGame, setFinishedBotGame] = useState(null);
+
+  const openAnalysis = (game = null) => {
+    setFinishedBotGame(game);
+    setMode("analysis");
+  };
+
+  return mode === "game" ? (
+    <BotGameMode onModeChange={setMode} onAnalyze={openAnalysis} />
+  ) : (
+    <AnalysisWorkspace
+      onModeChange={setMode}
+      initialBotGame={finishedBotGame}
+      onInitialBotGameConsumed={() => setFinishedBotGame(null)}
+    />
   );
 }
