@@ -15,9 +15,11 @@ export default function ChessBoardContainer({
   onNavigate,
   onReturnToGame,
   evaluationSeries,
+  pgn,
 }) {
   const [boardOrientation, setBoardOrientation] = useState("white");
   const [selectedSquareState, setSelectedSquareState] = useState(null);
+  const [copyStatus, setCopyStatus] = useState("");
   const sourceSquare = navigationMove?.slice(0, 2);
   const targetSquare = navigationMove?.slice(2, 4);
   const selectedSquare = selectedSquareState?.fen === fen ? selectedSquareState.square : null;
@@ -87,6 +89,17 @@ export default function ChessBoardContainer({
     }
   };
 
+  const copyToClipboard = async (value, label) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyStatus(`${label} skopiowany`);
+    } catch {
+      setCopyStatus(`Nie udało się skopiować ${label}`);
+    }
+    window.setTimeout(() => setCopyStatus(""), 2200);
+  };
+
   return (
     <div className="board-section">
       <div className="board-wrapper">
@@ -109,6 +122,11 @@ export default function ChessBoardContainer({
       >
         Obróć szachownicę · na dole: {boardOrientation === "white" ? "białe" : "czarne"}
       </button>
+      <div className="position-export" aria-label="Eksport pozycji i partii">
+        <button type="button" aria-label="Kopiuj FEN" title="Kopiuj FEN aktualnej pozycji" onClick={() => copyToClipboard(fen === "start" ? new Chess().fen() : fen, "FEN")}>⧉ FEN</button>
+        <button type="button" aria-label="Kopiuj PGN" onClick={() => copyToClipboard(pgn, "PGN")} disabled={!pgn} title={pgn ? "Kopiuj PGN całej partii" : "PGN jest dostępny po zaimportowaniu partii"}>⧉ PGN</button>
+        <span role="status" aria-live="polite">{copyStatus}</span>
+      </div>
       {navigation ? (
         <div className="review-controls">
           {isVariationMode && (

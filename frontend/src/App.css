@@ -146,6 +146,26 @@
   background: #edf1f2;
 }
 
+.position-export { display: flex; align-items: center; justify-content: flex-end; gap: 5px; min-height: 25px; margin-top: 5px; }
+.position-export button { padding: 3px 7px; border: 1px solid #aeb8bc; border-radius: 4px; background: #fff; color: #4b5b63; cursor: pointer; font-size: 10px; font-weight: 700; line-height: 1.3; }
+.position-export button:hover:not(:disabled) { border-color: #2980b9; background: #eaf4fb; color: #1f618d; }
+.position-export button:disabled { cursor: not-allowed; opacity: .48; }
+.position-export span { margin-right: auto; color: #287c4b; font-size: 10px; }
+
+.promotion-overlay { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(20,30,40,.62); }
+.promotion-picker { width: min(420px, 100%); padding: 18px; border-radius: 12px; background: #fff; box-shadow: 0 15px 45px rgba(0,0,0,.3); text-align: center; }
+.promotion-picker > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
+.promotion-picker > div button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border: 1px solid #bdc3c7; border-radius: 8px; background: #f8fafb; cursor: pointer; font-size: 36px; }
+.promotion-picker > div span { font-size: 11px; font-weight: 700; color: #34495e; }
+.promotion-picker > div button:hover { border-color: #2980b9; background: #eaf4fb; }
+.promotion-cancel { border: 0; background: transparent; color: #59666d; cursor: pointer; }
+.favorite-openings { display: flex; flex-direction: column; gap: 6px; }
+.favorite-openings > div { display: grid; grid-template-columns: 58px 1fr auto; align-items: center; gap: 7px; padding: 7px 8px; border-radius: 6px; background: #f4f7f8; }
+.favorite-openings span { color: #66757c; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.favorite-openings strong { color: #34495e; font-size: 12px; }
+.favorite-openings small { padding: 2px 5px; border-radius: 4px; background: #dfe9ed; color: #52656e; font-size: 10px; font-weight: 700; }
+.empty-side-section { color: #7f8c8d; font-size: 12px; font-style: italic; }
+
 .controls-container {
   display: flex;
   gap: 10px;

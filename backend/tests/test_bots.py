@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import chess
 
-from chess_logic.bot_game import BotGameManager
+from chess_logic.bot_game import BotGameManager, choose_bot_move, opening_plan_moves
 from chess_logic.bots import BotStore
 from chess_logic.openings import search_openings
 
@@ -39,6 +39,37 @@ class BotStoreTests(unittest.TestCase):
 
 
 class BotGameTests(unittest.IsolatedAsyncioTestCase):
+    def test_opening_plan_survives_opponent_deviation(self):
+        board = chess.Board()
+        for uci in ("d2d4", "g8f6", "g1f3", "d7d6"):
+            board.push_uci(uci)
+        london = search_openings("London System", 1)[0]
+        profile = {"openings": [{"opening_id": london["id"], "color": "white", "weight": 100}]}
+        self.assertEqual(opening_plan_moves(board, profile), [(chess.Move.from_uci("c1f4"), 100)])
+
+    def test_black_opening_requires_matching_first_move(self):
+        board = chess.Board()
+        board.push_uci("d2d4")
+        sicilian = search_openings("Sicilian Defense", 1)[0]
+        profile = {"openings": [{"opening_id": sicilian["id"], "color": "black", "weight": 100}]}
+        self.assertEqual(opening_plan_moves(board, profile), [])
+
+    async def test_low_elo_bot_still_chooses_an_engine_candidate(self):
+        board = chess.Board()
+        profile = {"target_elo": 800, "openings": [], "style": {
+            "aggression": 50, "tacticality": 50, "risk": 50,
+            "materialism": 50, "simplification": 50,
+        }}
+        candidate = chess.Move.from_uci("e2e4")
+        engine = unittest.mock.AsyncMock()
+        engine.analyse.return_value = [{"pv": [candidate], "score": chess.engine.PovScore(chess.engine.Cp(20), chess.WHITE)}]
+        engine.quit = unittest.mock.AsyncMock()
+        with patch("chess_logic.bot_game.os.path.exists", return_value=True), \
+                patch("chess_logic.bot_game.os.getenv", return_value="/stockfish"), \
+                patch("chess_logic.bot_game.chess.engine.popen_uci", return_value=(None, engine)):
+            move = await choose_bot_move(board, profile)
+        self.assertEqual(move, candidate)
+
     async def test_player_and_bot_moves_are_atomic_and_sanitized(self):
         store_dir = tempfile.TemporaryDirectory()
         try:

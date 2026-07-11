@@ -287,6 +287,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             onNavigate={handleNavigate}
             onReturnToGame={() => handleNavigate(gameNavigation.currentPly)}
             evaluationSeries={gameAnalysis?.evaluation_series}
+            pgn={importedGame?.pgn}
           />
           <ChessComPanel
             key={chessComUsername}

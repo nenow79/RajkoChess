@@ -2,6 +2,7 @@ import asyncio
 import math
 import os
 import random
+import time
 from dataclasses import dataclass, field
 from io import StringIO
 
@@ -15,22 +16,35 @@ from chess_logic.openings import find_opening
 PIECE_VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 0}
 
 
-async def choose_bot_move(board: chess.Board, profile: dict, rng: random.Random | None = None) -> chess.Move:
-    rng = rng or random.Random()
-    book_moves = []
+def opening_plan_moves(board: chess.Board, profile: dict) -> list[tuple[chess.Move, int]]:
+    """Find the next legal repertoire move while tolerating opponent deviations."""
     history = [move.uci() for move in board.move_stack]
     color = "white" if board.turn == chess.WHITE else "black"
+    parity = 0 if board.turn == chess.WHITE else 1
+    played_by_bot = history[parity::2]
+    planned = []
     for preference in profile.get("openings", []):
         if preference["color"] != color:
             continue
         opening = find_opening(preference["opening_id"])
         line = opening.get("uci", []) if opening else []
-        if len(line) > len(history) and line[:len(history)] == history:
-            move = chess.Move.from_uci(line[len(history)])
-            if move in board.legal_moves:
-                book_moves.extend([move] * max(1, preference.get("weight", 50)))
-    if book_moves:
-        return rng.choice(book_moves)
+        own_line = line[parity::2]
+        if not own_line or own_line[:len(played_by_bot)] != played_by_bot:
+            continue
+        # Black openings depend on White's first move (e.g. a Sicilian needs 1.e4).
+        if parity == 1 and not played_by_bot and (not history or history[0] != line[0]):
+            continue
+        if len(own_line) <= len(played_by_bot):
+            continue
+        move = chess.Move.from_uci(own_line[len(played_by_bot)])
+        if move in board.legal_moves:
+            planned.append((move, max(1, preference.get("weight", 50))))
+    return planned
+
+
+async def choose_bot_move(board: chess.Board, profile: dict, rng: random.Random | None = None) -> chess.Move:
+    rng = rng or random.Random()
+    planned_moves = opening_plan_moves(board, profile)
 
     engine_path = os.getenv("STOCKFISH_PATH")
     if not engine_path or not os.path.exists(engine_path):
@@ -61,13 +75,21 @@ async def choose_bot_move(board: chess.Board, profile: dict, rng: random.Random 
         return rng.choice(list(board.legal_moves))
 
     elo_ratio = (profile["target_elo"] - 800) / 2000
-    max_loss = 700 * (1 - elo_ratio) ** 1.7 + 25
+    max_loss = 200 * (1 - elo_ratio) ** 1.5 + 30
     viable = [(move, score) for move, score in candidates if best_score - score <= max_loss]
-    if profile["target_elo"] < 1200 and rng.random() < (1200 - profile["target_elo"]) / 1600:
-        return rng.choice(list(board.legal_moves))
-
     style = profile["style"]
-    temperature = max(8, 120 * (1 - elo_ratio) + style["risk"] * 0.8)
+    temperature = max(8, 12 + 35 * (1 - elo_ratio) + style["risk"] * 0.35)
+
+    # Continue the opening plan only if Stockfish still considers it sound.
+    viable_moves = {move for move, _ in viable}
+    safe_planned = [(move, weight) for move, weight in planned_moves if move in viable_moves]
+    if safe_planned:
+        return rng.choices(
+            [move for move, _ in safe_planned],
+            weights=[weight for _, weight in safe_planned],
+            k=1,
+        )[0]
+
     utilities = []
     for move, score in viable:
         capture = board.is_capture(move)
@@ -166,7 +188,12 @@ class BotGameManager:
         return game.response()
 
     async def _bot_turn(self, game):
+        started_at = time.monotonic()
         move = await choose_bot_move(game.board, game.bot)
+        # Ruchy z książki i łatwe pozycje nie powinny pojawiać się natychmiast.
+        # Czas obejmuje analizę silnika, więc opóźniamy tylko brakującą część.
+        desired_think_time = random.uniform(0.55, 1.15)
+        await asyncio.sleep(max(0, desired_think_time - (time.monotonic() - started_at)))
         captured = game.board.piece_at(move.to_square)
         game.board.push(move)
         game.last_move_uci = move.uci()

@@ -13,6 +13,9 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [creator, setCreator] = useState(null);
+  const [selectedSquare, setSelectedSquare] = useState(null);
+  const [boardOrientation, setBoardOrientation] = useState(null);
+  const [pendingPromotion, setPendingPromotion] = useState(null);
 
   const loadBots = () => axios.get(`${API_URL}/bots`).then(res => {
     setBots(res.data.bots);
@@ -30,7 +33,53 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
   const board = useMemo(() => {
     try { return new Chess(game?.fen); } catch { return new Chess(); }
   }, [game?.fen]);
+  const moveHistory = useMemo(() => {
+    const replay = new Chess();
+    const moves = [];
+    for (const uci of game?.history || []) {
+      try {
+        const result = replay.move({
+          from: uci.slice(0, 2),
+          to: uci.slice(2, 4),
+          promotion: uci.slice(4, 5) || undefined,
+        });
+        if (!result) break;
+        moves.push(result.san);
+      } catch {
+        break;
+      }
+    }
+    return moves;
+  }, [game?.history]);
   const isPlayerTurn = game?.status === "active" && game.turn === game.player_color && !busy;
+  const orientation = boardOrientation || game?.player_color || "white";
+  const activeSelectedSquare = selectedSquare && selectedSquare.fen === game?.fen && !busy ? selectedSquare.square : null;
+
+  const legalTargets = useMemo(() => {
+    if (!activeSelectedSquare || !isPlayerTurn) return [];
+    return board.moves({ square: activeSelectedSquare, verbose: true }).map(item => item.to);
+  }, [activeSelectedSquare, board, isPlayerTurn]);
+
+  const squareStyles = useMemo(() => {
+    const styles = {};
+    const lastMove = game?.last_move_uci;
+    if (lastMove) {
+      for (const square of [lastMove.slice(0, 2), lastMove.slice(2, 4)]) {
+        styles[square] = { background: "rgba(255, 193, 7, .62)", boxShadow: "inset 0 0 0 3px rgba(145, 96, 0, .45)" };
+      }
+    }
+    if (activeSelectedSquare) {
+      styles[activeSelectedSquare] = { background: "rgba(46, 204, 113, .68)", boxShadow: "inset 0 0 0 4px rgba(21, 105, 56, .65)" };
+      for (const square of legalTargets) {
+        styles[square] = { background: "radial-gradient(circle, rgba(46, 204, 113, .65) 0 18%, transparent 22%)" };
+      }
+    }
+    if (board.inCheck()) {
+      const king = board.findPiece({ type: "k", color: board.turn() })?.[0];
+      if (king) styles[king] = { background: "radial-gradient(circle, rgba(231, 76, 60, .9), rgba(192, 57, 43, .45))" };
+    }
+    return styles;
+  }, [activeSelectedSquare, board, game?.last_move_uci, legalTargets]);
 
   const start = async () => {
     if (!selectedId) return;
@@ -42,10 +91,10 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
     finally { setBusy(false); }
   };
 
-  const move = (from, to) => {
+  const submitMove = (from, to, promotion) => {
     if (!isPlayerTurn) return false;
     let result;
-    try { result = board.move({ from, to, promotion: "q" }); } catch { return false; }
+    try { result = board.move({ from, to, promotion }); } catch { return false; }
     if (!result) return false;
     const uci = `${from}${to}${result.promotion || ""}`;
     setBusy(true); setError("");
@@ -54,6 +103,31 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
       .catch(err => setError(err.response?.data?.detail || "Ruch został odrzucony."))
       .finally(() => setBusy(false));
     return true;
+  };
+
+  const move = (from, to) => {
+    const piece = board.get(from);
+    const isPromotion = piece?.type === "p" && (to.endsWith("8") || to.endsWith("1"));
+    if (isPromotion) {
+      setPendingPromotion({ from, to });
+      return false;
+    }
+    return submitMove(from, to);
+  };
+
+  const handleSquareClick = (square) => {
+    if (!isPlayerTurn) return;
+    const piece = board.get(square);
+    const ownPiece = piece?.color === board.turn();
+    if (!activeSelectedSquare) {
+      if (ownPiece) setSelectedSquare({ square, fen: game.fen });
+    } else if (square === activeSelectedSquare) {
+      setSelectedSquare(null);
+    } else if (ownPiece) {
+      setSelectedSquare({ square, fen: game.fen });
+    } else if (move(activeSelectedSquare, square)) {
+      setSelectedSquare(null);
+    }
   };
 
   const action = async (path) => {
@@ -100,15 +174,17 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
       </main> : <main className="bot-game-layout">
         <section className="bot-board-column">
           <div className="bot-game-status"><div className="bot-avatar small">{game.bot.avatar}</div><div><strong>{game.bot.name} · ≈ {game.bot.target_elo} Elo</strong><span>{game.status === "active" ? (busy ? "Bot myśli..." : isPlayerTurn ? "Twój ruch" : "Ruch bota") : `Koniec partii · ${game.result}`}</span></div></div>
-          <div className="board-wrapper"><Chessboard position={game.fen} onPieceDrop={move} arePiecesDraggable={isPlayerTurn} boardOrientation={game.player_color} animationDuration={400} /></div>
+          <div className="board-wrapper"><Chessboard position={game.fen} onPieceDrop={move} onSquareClick={handleSquareClick} customSquareStyles={squareStyles} arePiecesDraggable={isPlayerTurn} boardOrientation={orientation} animationDuration={400} /></div>
+          <button type="button" className="flip-board-btn" onClick={() => setBoardOrientation(current => (current || game.player_color) === "white" ? "black" : "white")}>Obróć szachownicę · na dole: {orientation === "white" ? "białe" : "czarne"}</button>
           {game.bot_message && <div className="bot-speech">{game.bot.avatar} „{game.bot_message}”</div>}
           {error && <p className="form-error">{error}</p>}
           {game.status === "active" ? <div className="game-action-row"><button onClick={() => action("draw-offer")} disabled={busy}>Zaproponuj remis</button><button className="danger-action" onClick={() => action("resign")} disabled={busy}>Poddaj partię</button></div> : <div className="game-action-row"><button onClick={() => setGame(null)}>Nowa partia</button><button className="primary-action" onClick={analyze} disabled={busy}>Przeanalizuj partię</button></div>}
         </section>
-        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p><h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Historia</h3><div className="move-history">{board.history().map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>)}</div></aside>
+        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p><h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{moveHistory.length ? moveHistory.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
       </main>}
       {error && !game && <p className="global-error">{error}</p>}
       {creator && <BotCreator editingBot={creator.bot} onClose={() => setCreator(null)} onSaved={() => { setCreator(null); loadBots(); }} />}
+      {pendingPromotion && <div className="promotion-overlay" role="dialog" aria-modal="true" aria-label="Wybierz figurę promocji"><div className="promotion-picker"><strong>Wybierz figurę</strong><div>{[["q", "Hetman", "♛"], ["r", "Wieża", "♜"], ["b", "Goniec", "♝"], ["n", "Skoczek", "♞"]].map(([piece, label, symbol]) => <button key={piece} type="button" title={label} onClick={() => { const pending = pendingPromotion; setPendingPromotion(null); setSelectedSquare(null); submitMove(pending.from, pending.to, piece); }}>{symbol}<span>{label}</span></button>)}</div><button type="button" className="promotion-cancel" onClick={() => setPendingPromotion(null)}>Anuluj</button></div></div>}
     </div>
   );
 }
