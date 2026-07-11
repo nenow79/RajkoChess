@@ -18,7 +18,11 @@ from chess_logic.llm_agent import (
     generate_chess_analysis,
     generate_game_analysis,
     get_default_model,
+    generate_bot_profile,
 )
+from chess_logic.bots import BotStore
+from chess_logic.bot_game import BotGameManager
+from chess_logic.openings import find_opening, search_openings, resolve_opening
 
 # Ładowanie zmiennych środowiskowych z .env
 load_dotenv()
@@ -36,6 +40,17 @@ class ImportGameRequest(BaseModel):
 class GamePositionRequest(BaseModel):
     ply: int
 
+class BotStartRequest(BaseModel):
+    bot_id: str
+    player_color: str = "random"
+
+class BotMoveRequest(BaseModel):
+    uci: str
+
+class BotDraftRequest(BaseModel):
+    description: str
+    model: Optional[str] = None
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], # Porty Vite
@@ -49,6 +64,8 @@ DEFAULT_SESSION_ID = "default"
 # Stan gry trzymamy osobno dla każdej przeglądarki/użytkownika.
 games: dict[str, ChessGame] = {}
 active_analysis_tasks: dict[str, asyncio.Task] = {}
+bot_store = BotStore()
+bot_games = BotGameManager()
 
 
 def get_session_id(x_session_id: str | None = Header(default=None, alias="X-Session-Id")) -> str:
@@ -60,6 +77,131 @@ def get_game(session_id: str = Depends(get_session_id)) -> ChessGame:
     if session_id not in games:
         games[session_id] = ChessGame()
     return games[session_id]
+
+
+@app.get("/api/bots")
+async def list_bots():
+    return {"bots": bot_store.list()}
+
+
+@app.post("/api/bots")
+async def create_bot(profile: dict):
+    try:
+        return bot_store.create(profile)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.put("/api/bots/{bot_id}")
+async def update_bot(bot_id: str, profile: dict):
+    try:
+        updated = bot_store.update(bot_id, profile)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Nie znaleziono bota")
+    return updated
+
+
+@app.delete("/api/bots/{bot_id}")
+async def delete_bot(bot_id: str):
+    if not bot_store.delete(bot_id):
+        raise HTTPException(status_code=404, detail="Nie znaleziono bota")
+    return {"deleted": True}
+
+
+@app.get("/api/openings")
+async def opening_search(q: str = "", limit: int = 30):
+    return {"openings": search_openings(q, min(max(limit, 1), 100))}
+
+
+@app.post("/api/bots/draft")
+async def draft_bot(request: BotDraftRequest):
+    if not request.description.strip():
+        raise HTTPException(status_code=400, detail="Opisz charakter bota")
+    if request.model and request.model not in AVAILABLE_MODEL_IDS:
+        raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
+    try:
+        draft = await generate_bot_profile(request.description, request.model)
+        warnings = []
+        openings = []
+        for color, queries in (draft.pop("opening_queries", {}) or {}).items():
+            if color not in ("white", "black"):
+                continue
+            for query in queries[:3]:
+                matched = resolve_opening(str(query))
+                if matched:
+                    openings.append({"opening_id": matched["id"], "color": color, "weight": 100})
+                else:
+                    warnings.append(f"Nie rozpoznano otwarcia: {query}")
+        draft["openings"] = openings
+        clean = BotStore.validate(draft)
+        for entry in clean["openings"]:
+            opening = find_opening(entry["opening_id"])
+            entry.update({"name": opening["name"], "eco": opening["eco"]})
+        return {"draft": clean, "warnings": warnings}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Nie udało się utworzyć profilu: {exc}")
+
+
+@app.post("/api/bot-games/start")
+async def start_bot_game(request: BotStartRequest, session_id: str = Depends(get_session_id)):
+    if request.player_color not in ("white", "black", "random"):
+        raise HTTPException(status_code=400, detail="Nieprawidłowy kolor")
+    bot = bot_store.get(request.bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Nie znaleziono bota")
+    try:
+        async with bot_games.lock(session_id):
+            return await bot_games.start(session_id, bot, request.player_color)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/bot-games/current")
+async def current_bot_game(session_id: str = Depends(get_session_id)):
+    game = bot_games.games.get(session_id)
+    return game.response() if game else {"status": "none"}
+
+
+@app.post("/api/bot-games/move")
+async def bot_game_move(request: BotMoveRequest, session_id: str = Depends(get_session_id)):
+    try:
+        async with bot_games.lock(session_id):
+            return await bot_games.move(session_id, request.uci)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/bot-games/resign")
+async def resign_bot_game(session_id: str = Depends(get_session_id)):
+    try:
+        return bot_games.resign(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/bot-games/draw-offer")
+async def bot_game_draw(session_id: str = Depends(get_session_id)):
+    try:
+        return bot_games.draw_offer(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/bot-games/to-analysis")
+async def bot_game_to_analysis(
+    session_id: str = Depends(get_session_id), game: ChessGame = Depends(get_game)
+):
+    bot_game = bot_games.games.get(session_id)
+    if not bot_game or bot_game.status == "active":
+        raise HTTPException(status_code=400, detail="Najpierw zakończ partię")
+    metadata = {"opponent": bot_game.bot["name"], "result": bot_game.result, "source": "bot"}
+    return game.load_pgn(bot_game.pgn(), metadata)
 
 class MoveRequest(BaseModel):
     uci: str  # np. "e2e4", "g1f3"
