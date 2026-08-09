@@ -139,6 +139,18 @@ Rekomendowany układ produkcyjny:
 - backend: FastAPI jako usługa `systemd` na `127.0.0.1:8000`,
 - nginx: reverse proxy z `/chess/api/` do backendowego `/api/`.
 
+Po jednorazowym skonfigurowaniu systemd i Nginx kolejne wersje można wdrażać
+automatycznie:
+
+```bash
+./deploy/deploy.sh
+```
+
+Skrypt pobiera i scala zmiany z Git, aktualizuje zależności Pythona i Node.js,
+buduje frontend, synchronizuje go do `/var/www/rajko-chess/chess`, restartuje
+API oraz sprawdza i przeładowuje Nginx. Aby wdrożyć bieżący lokalny kod bez
+wykonywania `git pull`, użyj `./deploy/deploy.sh --no-pull`.
+
 Build frontendu:
 
 ```bash
