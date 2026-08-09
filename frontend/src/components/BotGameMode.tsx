@@ -1,30 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Chess } from "chess.js";
+import { Chess, type PieceSymbol, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import { API_URL } from "../config";
 import BotCreator from "./BotCreator";
+import type { AppMode, BotGame, BotProfile, PlayerColor, PlayerColorChoice } from "../types";
 
-export default function BotGameMode({ onModeChange, onAnalyze }) {
-  const [bots, setBots] = useState([]);
+interface BotGameModeProps {
+  onModeChange: (mode: AppMode) => void;
+  onAnalyze: (game: BotGame) => void;
+}
+
+interface CreatorState {
+  mode: "create" | "edit";
+  bot?: BotProfile;
+}
+
+const apiError = (error: unknown, fallback: string) =>
+  axios.isAxiosError<{ detail?: string }>(error) ? error.response?.data?.detail || fallback : fallback;
+
+const PROMOTION_OPTIONS: [PieceSymbol, string, string][] = [
+  ["q", "Hetman", "♛"], ["r", "Wieża", "♜"], ["b", "Goniec", "♝"], ["n", "Skoczek", "♞"],
+];
+
+export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProps) {
+  const [bots, setBots] = useState<BotProfile[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [playerColor, setPlayerColor] = useState("random");
-  const [game, setGame] = useState(null);
+  const [playerColor, setPlayerColor] = useState<PlayerColorChoice>("random");
+  const [game, setGame] = useState<BotGame | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [creator, setCreator] = useState(null);
-  const [selectedSquare, setSelectedSquare] = useState(null);
-  const [boardOrientation, setBoardOrientation] = useState(null);
-  const [pendingPromotion, setPendingPromotion] = useState(null);
+  const [creator, setCreator] = useState<CreatorState | null>(null);
+  const [selectedSquare, setSelectedSquare] = useState<{ square: Square; fen: string } | null>(null);
+  const [boardOrientation, setBoardOrientation] = useState<PlayerColor | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null);
+  const [llmCommentary, setLlmCommentary] = useState(false);
 
-  const loadBots = () => axios.get(`${API_URL}/bots`).then(res => {
+  const loadBots = () => axios.get<{ bots: BotProfile[] }>(`${API_URL}/bots`).then(res => {
     setBots(res.data.bots);
     setSelectedId(current => current || res.data.bots[0]?.id || "");
   });
 
   useEffect(() => {
     loadBots().catch(() => setError("Nie udało się pobrać botów."));
-    axios.get(`${API_URL}/bot-games/current`).then(res => {
+    axios.get<BotGame & { status: string }>(`${API_URL}/bot-games/current`).then(res => {
       if (res.data.status !== "none") setGame(res.data);
     }).catch(() => {});
   }, []);
@@ -61,10 +80,10 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
   }, [activeSelectedSquare, board, isPlayerTurn]);
 
   const squareStyles = useMemo(() => {
-    const styles = {};
+    const styles: Partial<Record<Square, Record<string, string | number>>> = {};
     const lastMove = game?.last_move_uci;
     if (lastMove) {
-      for (const square of [lastMove.slice(0, 2), lastMove.slice(2, 4)]) {
+      for (const square of [lastMove.slice(0, 2), lastMove.slice(2, 4)] as Square[]) {
         styles[square] = { background: "rgba(255, 193, 7, .62)", boxShadow: "inset 0 0 0 3px rgba(145, 96, 0, .45)" };
       }
     }
@@ -85,27 +104,31 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
     if (!selectedId) return;
     setBusy(true); setError("");
     try {
-      const res = await axios.post(`${API_URL}/bot-games/start`, { bot_id: selectedId, player_color: playerColor });
+      const res = await axios.post<BotGame>(`${API_URL}/bot-games/start`, {
+        bot_id: selectedId,
+        player_color: playerColor,
+        llm_commentary: llmCommentary,
+      });
       setGame(res.data);
-    } catch (err) { setError(err.response?.data?.detail || "Nie udało się rozpocząć partii."); }
+    } catch (err) { setError(apiError(err, "Nie udało się rozpocząć partii.")); }
     finally { setBusy(false); }
   };
 
-  const submitMove = (from, to, promotion) => {
+  const submitMove = (from: Square, to: Square, promotion?: PieceSymbol) => {
     if (!isPlayerTurn) return false;
     let result;
     try { result = board.move({ from, to, promotion }); } catch { return false; }
     if (!result) return false;
     const uci = `${from}${to}${result.promotion || ""}`;
     setBusy(true); setError("");
-    axios.post(`${API_URL}/bot-games/move`, { uci })
+    axios.post<BotGame>(`${API_URL}/bot-games/move`, { uci })
       .then(res => setGame(res.data))
-      .catch(err => setError(err.response?.data?.detail || "Ruch został odrzucony."))
+      .catch(err => setError(apiError(err, "Ruch został odrzucony.")))
       .finally(() => setBusy(false));
     return true;
   };
 
-  const move = (from, to) => {
+  const move = (from: Square, to: Square) => {
     const piece = board.get(from);
     const isPromotion = piece?.type === "p" && (to.endsWith("8") || to.endsWith("1"));
     if (isPromotion) {
@@ -115,8 +138,8 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
     return submitMove(from, to);
   };
 
-  const handleSquareClick = (square) => {
-    if (!isPlayerTurn) return;
+  const handleSquareClick = (square: Square) => {
+    if (!isPlayerTurn || !game) return;
     const piece = board.get(square);
     const ownPiece = piece?.color === board.turn();
     if (!activeSelectedSquare) {
@@ -130,14 +153,14 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
     }
   };
 
-  const action = async (path) => {
+  const action = async (path: "draw-offer" | "resign") => {
     setBusy(true); setError("");
-    try { const res = await axios.post(`${API_URL}/bot-games/${path}`); setGame(res.data); }
-    catch (err) { setError(err.response?.data?.detail || "Operacja nie powiodła się."); }
+    try { const res = await axios.post<BotGame>(`${API_URL}/bot-games/${path}`); setGame(res.data); }
+    catch (err) { setError(apiError(err, "Operacja nie powiodła się.")); }
     finally { setBusy(false); }
   };
 
-  const removeBot = async (bot) => {
+  const removeBot = async (bot: BotProfile) => {
     if (!window.confirm(`Usunąć bota „${bot.name}”?`)) return;
     await axios.delete(`${API_URL}/bots/${bot.id}`);
     setSelectedId("");
@@ -150,11 +173,12 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
   };
 
   const analyze = async () => {
+    if (!game) return;
     setBusy(true);
     try {
       await axios.post(`${API_URL}/bot-games/to-analysis`);
       onAnalyze(game);
-    } catch (err) { setError(err.response?.data?.detail || "Nie udało się przekazać partii do analizy."); setBusy(false); }
+    } catch (err) { setError(apiError(err, "Nie udało się przekazać partii do analizy.")); setBusy(false); }
   };
 
   return (
@@ -170,21 +194,22 @@ export default function BotGameMode({ onModeChange, onAnalyze }) {
           <div className="bot-style-summary"><span>Agresja {bot.style.aggression}</span><span>Taktyka {bot.style.tacticality}</span><span>Ryzyko {bot.style.risk}</span></div>
           <div className="bot-card-actions"><button onClick={event => { event.stopPropagation(); setCreator({ mode: "edit", bot }); }}>Edytuj</button><button onClick={event => { event.stopPropagation(); removeBot(bot); }}>Usuń</button></div>
         </article>)}</div>
-        {selectedBot && <section className="start-game-panel"><div><strong>Zagrasz przeciwko: {selectedBot.avatar} {selectedBot.name}</strong><span>Siła jest orientacyjna i zależy od pozycji.</span></div><label>Twój kolor<select value={playerColor} onChange={e => setPlayerColor(e.target.value)}><option value="random">Losowy</option><option value="white">Białe</option><option value="black">Czarne</option></select></label><button onClick={start} disabled={busy}>{busy ? "Bot przygotowuje ruch..." : "Rozpocznij partię"}</button></section>}
+        {selectedBot && <section className="start-game-panel"><div><strong>Zagrasz przeciwko: {selectedBot.avatar} {selectedBot.name}</strong><span>Siła jest orientacyjna i zależy od pozycji.</span></div><label>Twój kolor<select value={playerColor} onChange={e => setPlayerColor(e.target.value as PlayerColorChoice)}><option value="random">Losowy</option><option value="white">Białe</option><option value="black">Czarne</option></select></label><label className="commentary-toggle"><input type="checkbox" role="switch" checked={llmCommentary} onChange={e => setLlmCommentary(e.target.checked)} /><span><strong>Komentarze LLM</strong><small>Tylko ważne momenty</small></span></label><button onClick={start} disabled={busy}>{busy ? "Bot przygotowuje ruch..." : "Rozpocznij partię"}</button></section>}
       </main> : <main className="bot-game-layout">
         <section className="bot-board-column">
           <div className="bot-game-status"><div className="bot-avatar small">{game.bot.avatar}</div><div><strong>{game.bot.name} · ≈ {game.bot.target_elo} Elo</strong><span>{game.status === "active" ? (busy ? "Bot myśli..." : isPlayerTurn ? "Twój ruch" : "Ruch bota") : `Koniec partii · ${game.result}`}</span></div></div>
           <div className="board-wrapper"><Chessboard position={game.fen} onPieceDrop={move} onSquareClick={handleSquareClick} customSquareStyles={squareStyles} arePiecesDraggable={isPlayerTurn} boardOrientation={orientation} animationDuration={400} /></div>
           <button type="button" className="flip-board-btn" onClick={() => setBoardOrientation(current => (current || game.player_color) === "white" ? "black" : "white")}>Obróć szachownicę · na dole: {orientation === "white" ? "białe" : "czarne"}</button>
           {game.bot_message && <div className="bot-speech">{game.bot.avatar} „{game.bot_message}”</div>}
+          {game.llm_commentary && <div className="bot-speech llm-commentary"><span>✦ komentarz LLM</span>{game.bot.avatar} „{game.llm_commentary}”</div>}
           {error && <p className="form-error">{error}</p>}
           {game.status === "active" ? <div className="game-action-row"><button onClick={() => action("draw-offer")} disabled={busy}>Zaproponuj remis</button><button className="danger-action" onClick={() => action("resign")} disabled={busy}>Poddaj partię</button></div> : <div className="game-action-row"><button onClick={() => setGame(null)}>Nowa partia</button><button className="primary-action" onClick={analyze} disabled={busy}>Przeanalizuj partię</button></div>}
         </section>
-        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p><h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{moveHistory.length ? moveHistory.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
+        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p>{game.llm_commentary_enabled && <p className="commentary-active">✦ Komentarze ważnych momentów są włączone</p>}<h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{moveHistory.length ? moveHistory.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
       </main>}
       {error && !game && <p className="global-error">{error}</p>}
       {creator && <BotCreator editingBot={creator.bot} onClose={() => setCreator(null)} onSaved={() => { setCreator(null); loadBots(); }} />}
-      {pendingPromotion && <div className="promotion-overlay" role="dialog" aria-modal="true" aria-label="Wybierz figurę promocji"><div className="promotion-picker"><strong>Wybierz figurę</strong><div>{[["q", "Hetman", "♛"], ["r", "Wieża", "♜"], ["b", "Goniec", "♝"], ["n", "Skoczek", "♞"]].map(([piece, label, symbol]) => <button key={piece} type="button" title={label} onClick={() => { const pending = pendingPromotion; setPendingPromotion(null); setSelectedSquare(null); submitMove(pending.from, pending.to, piece); }}>{symbol}<span>{label}</span></button>)}</div><button type="button" className="promotion-cancel" onClick={() => setPendingPromotion(null)}>Anuluj</button></div></div>}
+      {pendingPromotion && <div className="promotion-overlay" role="dialog" aria-modal="true" aria-label="Wybierz figurę promocji"><div className="promotion-picker"><strong>Wybierz figurę</strong><div>{PROMOTION_OPTIONS.map(([piece, label, symbol]) => <button key={piece} type="button" title={label} onClick={() => { const pending = pendingPromotion; setPendingPromotion(null); setSelectedSquare(null); submitMove(pending.from, pending.to, piece); }}>{symbol}<span>{label}</span></button>)}</div><button type="button" className="promotion-cancel" onClick={() => setPendingPromotion(null)}>Anuluj</button></div></div>}
     </div>
   );
 }

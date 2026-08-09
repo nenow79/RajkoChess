@@ -11,6 +11,7 @@ import chess.engine
 import chess.pgn
 
 from chess_logic.openings import find_opening
+from chess_logic.llm_agent import generate_bot_move_commentary
 
 
 PIECE_VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 0}
@@ -107,6 +108,56 @@ async def choose_bot_move(board: chess.Board, profile: dict, rng: random.Random 
     return rng.choices([move for move, _ in utilities], weights=weights, k=1)[0]
 
 
+async def detect_commentary_event(board: chess.Board, move: chess.Move) -> dict | None:
+    """Use a quick engine pass to decide whether a player's move merits a comment."""
+    engine_path = os.getenv("STOCKFISH_PATH")
+    if not engine_path or not os.path.exists(engine_path):
+        return None
+
+    mover = board.turn
+    played_san = board.san(move)
+    was_capture = board.is_capture(move)
+    _, engine = await chess.engine.popen_uci(engine_path)
+    try:
+        before = await engine.analyse(board, chess.engine.Limit(time=0.12))
+        best_move = before.get("pv", [None])[0]
+        best_san = board.san(best_move) if best_move else None
+        before_score = before["score"].pov(mover).score(mate_score=100000)
+
+        after_board = board.copy(stack=True)
+        after_board.push(move)
+        after = await engine.analyse(after_board, chess.engine.Limit(time=0.12))
+        after_score_obj = after["score"].pov(mover)
+        after_score = after_score_obj.score(mate_score=100000)
+    finally:
+        await engine.quit()
+
+    if before_score is None or after_score is None:
+        return None
+    loss = max(0, before_score - after_score)
+    gives_check = after_board.is_check()
+
+    if after_score_obj.is_mate() and (after_score_obj.mate() or 0) < 0:
+        kind = "przeoczony lub nieunikniony mat"
+    elif loss >= 180:
+        kind = "poważny blunder"
+    elif loss >= 90:
+        kind = "istotne przeoczenie"
+    elif best_move == move and (was_capture or gives_check):
+        kind = "bardzo dobry ruch taktyczny lub kombinacja"
+    else:
+        return None
+
+    return {
+        "type": kind,
+        "played_move_san": played_san,
+        "best_move_san": best_san,
+        "evaluation_loss_pawns": round(loss / 100, 1),
+        "gave_check": gives_check,
+        "was_capture": was_capture,
+    }
+
+
 @dataclass
 class BotGame:
     bot: dict
@@ -116,6 +167,9 @@ class BotGame:
     result: str | None = None
     last_move_uci: str | None = None
     bot_message: str | None = None
+    llm_commentary_enabled: bool = False
+    llm_commentary: str | None = None
+    last_comment_ply: int = -10
 
     @property
     def bot_color(self):
@@ -146,6 +200,8 @@ class BotGame:
             "turn": "white" if self.board.turn else "black", "status": self.status,
             "result": self.result, "last_move_uci": self.last_move_uci,
             "bot_message": self.bot_message, "pgn": self.pgn() if self.status != "active" else None,
+            "llm_commentary_enabled": self.llm_commentary_enabled,
+            "llm_commentary": self.llm_commentary,
         }
 
 
@@ -157,9 +213,14 @@ class BotGameManager:
     def lock(self, session_id):
         return self.locks.setdefault(session_id, asyncio.Lock())
 
-    async def start(self, session_id, bot, player_color):
+    async def start(self, session_id, bot, player_color, llm_commentary=False):
         color = random.choice([chess.WHITE, chess.BLACK]) if player_color == "random" else player_color == "white"
-        game = BotGame(bot=bot, player_color=color, bot_message=bot["phrases"]["greeting"])
+        game = BotGame(
+            bot=bot,
+            player_color=color,
+            bot_message=bot["phrases"]["greeting"],
+            llm_commentary_enabled=llm_commentary,
+        )
         self.games[session_id] = game
         if game.board.turn == game.bot_color:
             await self._bot_turn(game)
@@ -177,6 +238,13 @@ class BotGameManager:
             raise ValueError("Nieprawidłowy ruch") from exc
         if move not in game.board.legal_moves:
             raise ValueError("Nielegalny ruch")
+        commentary_event = None
+        if game.llm_commentary_enabled and len(game.board.move_stack) - game.last_comment_ply >= 4:
+            try:
+                commentary_event = await detect_commentary_event(game.board, move)
+            except Exception:
+                # Dodatkowa analiza komentarza nie może zablokować legalnego ruchu.
+                commentary_event = None
         captured = game.board.piece_at(move.to_square)
         game.board.push(move)
         game.last_move_uci = move.uci()
@@ -185,6 +253,16 @@ class BotGameManager:
         ) else None
         if not game.finish_if_needed():
             await self._bot_turn(game)
+        game.llm_commentary = None
+        if commentary_event:
+            game.llm_commentary = await generate_bot_move_commentary(
+                bot=game.bot,
+                event=commentary_event,
+                fen=game.board.fen(),
+                move_history=[item.uci() for item in game.board.move_stack],
+            )
+            if game.llm_commentary:
+                game.last_comment_ply = len(game.board.move_stack)
         return game.response()
 
     async def _bot_turn(self, game):

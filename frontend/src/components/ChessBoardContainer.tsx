@@ -1,7 +1,25 @@
 import { useMemo, useState } from "react";
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import EvaluationChart from "./EvaluationChart";
+import type { EvaluationPoint, GameNavigation, PlayerColor } from "../types";
+
+interface ChessBoardContainerProps {
+  boardKey: number;
+  fen: string;
+  onPieceDrop: (sourceSquare: Square, targetSquare: Square) => boolean;
+  onUndo: () => void;
+  onReset: () => void;
+  navigation: GameNavigation | null;
+  isVariationMode: boolean;
+  navigationMove: string | null;
+  onNavigate: (ply: number) => void;
+  onReturnToGame: () => void;
+  evaluationSeries?: EvaluationPoint[];
+  pgn?: string;
+}
+
+type SquareStyles = Partial<Record<Square, Record<string, string | number>>>;
 
 export default function ChessBoardContainer({
   boardKey,
@@ -16,12 +34,12 @@ export default function ChessBoardContainer({
   onReturnToGame,
   evaluationSeries,
   pgn,
-}) {
-  const [boardOrientation, setBoardOrientation] = useState("white");
-  const [selectedSquareState, setSelectedSquareState] = useState(null);
+}: ChessBoardContainerProps) {
+  const [boardOrientation, setBoardOrientation] = useState<PlayerColor>("white");
+  const [selectedSquareState, setSelectedSquareState] = useState<{ square: Square; fen: string } | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
-  const sourceSquare = navigationMove?.slice(0, 2);
-  const targetSquare = navigationMove?.slice(2, 4);
+  const sourceSquare = navigationMove?.slice(0, 2) as Square | undefined;
+  const targetSquare = navigationMove?.slice(2, 4) as Square | undefined;
   const selectedSquare = selectedSquareState?.fen === fen ? selectedSquareState.square : null;
 
   const chess = useMemo(() => {
@@ -38,7 +56,7 @@ export default function ChessBoardContainer({
     return chess.moves({ square: selectedSquare, verbose: true }).map((move) => move.to);
   }, [chess, selectedSquare]);
 
-  const navigationSquareStyles = navigationMove ? {
+  const navigationSquareStyles: SquareStyles = navigationMove && sourceSquare && targetSquare ? {
     [sourceSquare]: {
       background: "radial-gradient(circle, rgba(255, 193, 7, 0.88) 0%, rgba(255, 193, 7, 0.58) 72%, rgba(255, 193, 7, 0.35) 100%)",
       boxShadow: "inset 0 0 0 4px rgba(145, 96, 0, 0.62)",
@@ -49,7 +67,7 @@ export default function ChessBoardContainer({
     },
   } : {};
 
-  const selectedSquareStyles = selectedSquare ? {
+  const selectedSquareStyles: SquareStyles = selectedSquare ? {
     [selectedSquare]: {
       background: "radial-gradient(circle, rgba(46, 204, 113, 0.9) 0%, rgba(46, 204, 113, 0.58) 72%, rgba(39, 174, 96, 0.38) 100%)",
       boxShadow: "inset 0 0 0 4px rgba(21, 105, 56, 0.72)",
@@ -62,7 +80,7 @@ export default function ChessBoardContainer({
     ])),
   } : {};
 
-  const handleSquareClick = (square) => {
+  const handleSquareClick = (square: Square) => {
     if (!chess) return;
 
     const piece = chess.get(square);
@@ -89,7 +107,7 @@ export default function ChessBoardContainer({
     }
   };
 
-  const copyToClipboard = async (value, label) => {
+  const copyToClipboard = async (value: string | undefined, label: string) => {
     if (!value) return;
     try {
       await navigator.clipboard.writeText(value);

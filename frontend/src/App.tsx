@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Chess } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import axios from "axios";
 
 import "./App.css";
@@ -10,6 +10,17 @@ import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
 import ChessComPanel from "./components/ChessComPanel";
 import { API_URL } from "./config";
 import BotGameMode from "./components/BotGameMode";
+import type {
+  AppMode,
+  BotGame,
+  ChessComGame,
+  ExplorerData,
+  GameAnalysis,
+  GameNavigation,
+  ImportedGame,
+  PositionAnalysis,
+  RatingRange,
+} from "./types";
 
 const DEFAULT_CHESSCOM_USERNAME = "nenow79";
 const SESSION_STORAGE_KEY = "rajko-session-id";
@@ -26,27 +37,33 @@ function getSessionId() {
 
 axios.defaults.headers.common["X-Session-Id"] = getSessionId();
 
-function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsumed }) {
+interface AnalysisWorkspaceProps {
+  onModeChange: (mode: AppMode) => void;
+  initialBotGame: BotGame | null;
+  onInitialBotGameConsumed: () => void;
+}
+
+function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsumed }: AnalysisWorkspaceProps) {
   const initialBotGameRef = useRef(initialBotGame);
   const consumeInitialGameRef = useRef(onInitialBotGameConsumed);
   const gameRef = useRef(new Chess());
   const [fen, setFen] = useState("start");
   const [boardKey, setBoardKey] = useState(0);
 
-  const [explorerData, setExplorerData] = useState(null);
+  const [explorerData, setExplorerData] = useState<ExplorerData | null>(null);
   const [explorerRatingRange, setExplorerRatingRange] = useState({ min: 400, max: 2500 });
-  const [analysisData, setAnalysisData] = useState(null);
+  const [analysisData, setAnalysisData] = useState<PositionAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [chessComUsername, setChessComUsername] = useState(DEFAULT_CHESSCOM_USERNAME);
-  const [chessComGames, setChessComGames] = useState([]);
+  const [chessComGames, setChessComGames] = useState<ChessComGame[]>([]);
   const [isLoadingChessCom, setIsLoadingChessCom] = useState(true);
-  const [importedGame, setImportedGame] = useState(null);
-  const [gameNavigation, setGameNavigation] = useState(null);
-  const [gameAnalysis, setGameAnalysis] = useState(null);
-  const [navigationMove, setNavigationMove] = useState(null);
+  const [importedGame, setImportedGame] = useState<ImportedGame | null>(null);
+  const [gameNavigation, setGameNavigation] = useState<GameNavigation | null>(null);
+  const [gameAnalysis, setGameAnalysis] = useState<GameAnalysis | null>(null);
+  const [navigationMove, setNavigationMove] = useState<string | null>(null);
   const [isVariationMode, setIsVariationMode] = useState(false);
 
-  const fetchExplorerData = (ratingRange = explorerRatingRange) => {
+  const fetchExplorerData = (ratingRange: RatingRange = explorerRatingRange) => {
     const ratings = LICHESS_RATING_BUCKETS
       .filter((rating) => rating >= ratingRange.min && rating <= ratingRange.max)
       .join(",");
@@ -56,7 +73,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       .catch((err) => console.error("Błąd Lichess:", err));
   };
 
-  const handleExplorerRatingRangeChange = (range) => {
+  const handleExplorerRatingRangeChange = (range: RatingRange) => {
     setExplorerRatingRange(range);
     setExplorerData(null);
     fetchExplorerData(range);
@@ -83,7 +100,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
     setIsVariationMode(false);
   };
 
-  const fetchChessComGames = (username = chessComUsername) => {
+  const fetchChessComGames = (username: string = chessComUsername) => {
     const normalizedUsername = username.trim();
     if (!normalizedUsername) return;
 
@@ -94,7 +111,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       .finally(() => setIsLoadingChessCom(false));
   };
 
-  const handleChessComUsernameChange = (username) => {
+  const handleChessComUsernameChange = (username: string) => {
     const normalizedUsername = username.trim() || DEFAULT_CHESSCOM_USERNAME;
     setChessComUsername(normalizedUsername);
     setChessComGames([]);
@@ -118,6 +135,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         if (initialGame?.pgn) {
           setImportedGame({
             ...initialGame,
+            pgn: initialGame.pgn,
             opponent: initialGame.bot?.name,
           });
           setGameNavigation({
@@ -141,7 +159,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       .finally(() => setIsLoadingChessCom(false));
   }, []); // The workspace is remounted when entering analysis mode.
 
-  const handleImportGame = (selectedGame) => {
+  const handleImportGame = (selectedGame: ChessComGame) => {
     axios.post(`${API_URL}/import-game`, {
       pgn: selectedGame.pgn,
       metadata: selectedGame,
@@ -164,7 +182,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       .catch((err) => console.error("Błąd importu PGN:", err));
   };
 
-  function onPieceDrop(sourceSquare, targetSquare) {
+  function onPieceDrop(sourceSquare: Square, targetSquare: Square) {
     try {
       const moveResult = gameRef.current.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
       if (!moveResult) return false;
@@ -213,7 +231,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         setFen(res.data.fen);
         setNavigationMove(null);
         if (preserveImportedContext) {
-          const variationStillActive = gameRef.current.history().length > gameNavigation.currentPly;
+          const variationStillActive = gameRef.current.history().length > gameNavigation!.currentPly;
           setIsVariationMode(variationStillActive);
         } else {
           setImportedGame(null);
@@ -242,7 +260,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       .catch(err => console.error("Błąd resetu:", err));
   };
 
-  const handleNavigate = (ply) => {
+  const handleNavigate = (ply: number) => {
     axios.post(`${API_URL}/imported-game/position`, { ply })
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
@@ -285,7 +303,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             isVariationMode={isVariationMode}
             navigationMove={navigationMove}
             onNavigate={handleNavigate}
-            onReturnToGame={() => handleNavigate(gameNavigation.currentPly)}
+            onReturnToGame={() => gameNavigation && handleNavigate(gameNavigation.currentPly)}
             evaluationSeries={gameAnalysis?.evaluation_series}
             pgn={importedGame?.pgn}
           />
@@ -326,10 +344,10 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
 }
 
 export default function App() {
-  const [mode, setMode] = useState("analysis");
-  const [finishedBotGame, setFinishedBotGame] = useState(null);
+  const [mode, setMode] = useState<AppMode>("analysis");
+  const [finishedBotGame, setFinishedBotGame] = useState<BotGame | null>(null);
 
-  const openAnalysis = (game = null) => {
+  const openAnalysis = (game: BotGame | null = null) => {
     setFinishedBotGame(game);
     setMode("analysis");
   };

@@ -24,6 +24,7 @@ AVAILABLE_MODELS = [
 ]
 AVAILABLE_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
 FALLBACK_MODEL = "google/gemini-3-flash-preview"
+BOT_COMMENTARY_MODEL = os.getenv("BOT_COMMENTARY_MODEL", "sao10k/l3-lunaris-8b")
 OPENROUTER_HTTP_REFERER = os.getenv("OPENROUTER_HTTP_REFERER", "http://localhost:5173")
 OPENROUTER_APP_TITLE = os.getenv("OPENROUTER_APP_TITLE", "Rajko Chess Analyser")
 
@@ -35,6 +36,44 @@ def has_openrouter_api_key() -> bool:
 def get_default_model() -> str:
     configured_model = os.getenv("LLM_MODEL", FALLBACK_MODEL)
     return configured_model if configured_model in AVAILABLE_MODEL_IDS else FALLBACK_MODEL
+
+
+async def generate_bot_move_commentary(
+    *, bot: dict, event: dict, fen: str, move_history: list[str]
+) -> str | None:
+    """Generate one short in-character remark for an engine-selected key moment."""
+    if not has_openrouter_api_key():
+        return None
+
+    prompt = """
+    Jesteś szachowym przeciwnikiem użytkownika. Komentujesz po polsku tylko ważny
+    moment wskazany wcześniej przez Stockfisha. Napisz jedno naturalne zdanie,
+    maksymalnie 25 słów. Zachowaj osobowość bota. Możesz podać ruch w SAN, ale nie
+    podawaj liczbowej oceny silnika, centypionów ani technicznych danych. Nie obrażaj
+    gracza i nie udawaj, że widzisz coś poza przekazanymi danymi.
+    """
+    context = {
+        "bot": {"name": bot["name"], "description": bot["description"], "style": bot["style"]},
+        "important_moment": event,
+        "current_fen": fen,
+        "recent_moves_uci": move_history[-10:],
+    }
+    try:
+        response = await client.chat.completions.create(
+            model=BOT_COMMENTARY_MODEL,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+            ],
+            extra_headers={"HTTP-Referer": OPENROUTER_HTTP_REFERER, "X-Title": OPENROUTER_APP_TITLE},
+            temperature=0.8,
+            max_tokens=80,
+        )
+        content = (response.choices[0].message.content or "").strip().strip('"')
+        return content[:300] or None
+    except Exception:
+        # Komentarz jest dodatkiem i jego awaria nie może przerwać partii.
+        return None
 
 
 async def generate_chess_analysis(

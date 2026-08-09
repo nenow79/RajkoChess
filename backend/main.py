@@ -43,6 +43,7 @@ class GamePositionRequest(BaseModel):
 class BotStartRequest(BaseModel):
     bot_id: str
     player_color: str = "random"
+    llm_commentary: bool = False
 
 class BotMoveRequest(BaseModel):
     uci: str
@@ -155,7 +156,12 @@ async def start_bot_game(request: BotStartRequest, session_id: str = Depends(get
         raise HTTPException(status_code=404, detail="Nie znaleziono bota")
     try:
         async with bot_games.lock(session_id):
-            return await bot_games.start(session_id, bot, request.player_color)
+            return await bot_games.start(
+                session_id,
+                bot,
+                request.player_color,
+                llm_commentary=request.llm_commentary,
+            )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

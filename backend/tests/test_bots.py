@@ -87,9 +87,33 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response["history"], ["e2e4", "e7e5"])
             self.assertNotIn("evaluation", response)
             self.assertNotIn("variations", response)
+            self.assertFalse(response["llm_commentary_enabled"])
             resigned = manager.resign("session")
             self.assertEqual(resigned["result"], "0-1")
             self.assertIn("Rajko Chess Bot Game", resigned["pgn"])
+        finally:
+            store_dir.cleanup()
+
+    async def test_llm_commentary_is_generated_only_for_detected_event(self):
+        store_dir = tempfile.TemporaryDirectory()
+        try:
+            bot = BotStore(str(Path(store_dir.name) / "bots.sqlite3")).list()[0]
+            manager = BotGameManager()
+
+            async def fake_move(board, profile, rng=None):
+                return chess.Move.from_uci("e7e5")
+
+            event = {"type": "poważny blunder", "played_move_san": "e4"}
+            with patch("chess_logic.bot_game.choose_bot_move", fake_move), \
+                    patch("chess_logic.bot_game.detect_commentary_event", return_value=event) as detect, \
+                    patch("chess_logic.bot_game.generate_bot_move_commentary", return_value="Tego pionka będzie ci brakować.") as generate:
+                await manager.start("session", bot, "white", llm_commentary=True)
+                response = await manager.move("session", "e2e4")
+
+            detect.assert_awaited_once()
+            generate.assert_awaited_once()
+            self.assertTrue(response["llm_commentary_enabled"])
+            self.assertEqual(response["llm_commentary"], "Tego pionka będzie ci brakować.")
         finally:
             store_dir.cleanup()
 

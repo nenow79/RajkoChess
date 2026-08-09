@@ -11,6 +11,7 @@ Aplikacja webowa do analizy szachowej i gry ze spersonalizowanymi botami. Fronte
 - import i analiza zakończonej partii PGN,
 - czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha,
 - osobny tryb gry ze spersonalizowanymi botami o regulowanej sile, stylu i repertuarze,
+- opcjonalne komentarze LLM botów przy najważniejszych momentach partii,
 - kreator botów wspierany przez LLM oraz trwały katalog profili w SQLite,
 - lokalny katalog 3790 linii debiutowych z projektu `lichess-org/chess-openings`,
 - przekazanie zakończonej partii z botem bezpośrednio do trybu analizy.
@@ -60,11 +61,13 @@ Pełna konfiguracja może wyglądać tak:
 ```env
 OPENROUTER_API_KEY=sk-or-...
 LLM_MODEL=google/gemini-3-flash-preview
+BOT_COMMENTARY_MODEL=sao10k/l3-lunaris-8b
 BOT_DB_PATH=./data/bots.sqlite3
 LICHESS_API_TOKEN=
 ```
 
 `LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu domyślnego z kodu.
+`BOT_COMMENTARY_MODEL` wybiera model krótkich komentarzy w trybie gry z botem.
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
 `BOT_DB_PATH` wskazuje bazę SQLite ze wspólnymi profilami botów. Przy pierwszym uruchomieniu backend automatycznie tworzy schemat oraz trzy profile startowe. Aktywne partie są trzymane w pamięci i kończą się przy restarcie backendu, natomiast profile botów pozostają zapisane.

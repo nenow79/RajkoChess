@@ -1,9 +1,16 @@
 import WinrateBar from "./WinrateBar";
+import type { ExplorerData, RatingRange } from "../types";
 
 const RATING_BUCKETS = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 
-export default function LichessExplorer({ data, ratingRange, onRatingRangeChange }) {
-  const updateRange = (key, value) => {
+interface LichessExplorerProps {
+  data: ExplorerData | null;
+  ratingRange: RatingRange;
+  onRatingRangeChange: (range: RatingRange) => void;
+}
+
+export default function LichessExplorer({ data, ratingRange, onRatingRangeChange }: LichessExplorerProps) {
+  const updateRange = (key: keyof RatingRange, value: string) => {
     const nextRange = { ...ratingRange, [key]: Number(value) };
     if (key === "min" && nextRange.min > nextRange.max) nextRange.max = nextRange.min;
     if (key === "max" && nextRange.max < nextRange.min) nextRange.min = nextRange.max;
@@ -73,7 +80,7 @@ export default function LichessExplorer({ data, ratingRange, onRatingRangeChange
               ))}
               {data.top_moves.length === 0 && (
                 <tr>
-                  <td colSpan="3" className="empty-table">Brak danych dla tej pozycji.</td>
+                  <td colSpan={3} className="empty-table">Brak danych dla tej pozycji.</td>
                 </tr>
               )}
             </tbody>

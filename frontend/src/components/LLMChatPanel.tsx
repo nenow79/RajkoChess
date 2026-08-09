@@ -1,23 +1,35 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_URL } from "../config";
+import type { GameAnalysis, ImportedGame, LlmModel } from "../types";
 
 const MODEL_STORAGE_KEY = "rajko-selected-model";
-const WELCOME_MESSAGE = {
+interface ChatMessage {
+  role: "bot" | "user";
+  text: string;
+}
+
+const WELCOME_MESSAGE: ChatMessage = {
   role: "bot",
   text: "Witaj! Jestem RajkoAI. Przeanalizuję dla Ciebie obecną pozycję na szachownicy, wskażę plany oraz pułapki debiutowe. O co chcesz zapytać?"
 };
 
-export default function LLMChatPanel({ importedGame, playerUsername, onGameAnalyzed }) {
-  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
+interface LLMChatPanelProps {
+  importedGame: ImportedGame | null;
+  playerUsername: string;
+  onGameAnalyzed: (analysis: GameAnalysis) => void;
+}
+
+export default function LLMChatPanel({ importedGame, playerUsername, onGameAnalyzed }: LLMChatPanelProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [models, setModels] = useState([]);
+  const [models, setModels] = useState<LlmModel[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
-  const messagesEndRef = useRef(null);
-  const analysisControllerRef = useRef(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const analysisControllerRef = useRef<AbortController | null>(null);
 
   // Automatyczne przewijanie czatu w dół przy nowej wiadomości
   const scrollToBottom = () => {
@@ -29,11 +41,11 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   }, [messages]);
 
   useEffect(() => {
-    axios.get(`${API_URL}/models`)
+    axios.get<{ models: LlmModel[]; default_model: string }>(`${API_URL}/models`)
       .then((res) => {
         const availableModels = res.data.models;
         const savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
-        const initialModel = availableModels.some((model) => model.id === savedModel)
+        const initialModel = savedModel && availableModels.some((model) => model.id === savedModel)
           ? savedModel
           : res.data.default_model;
 
@@ -43,7 +55,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
       .catch((err) => console.error("Błąd pobierania modeli:", err));
   }, []);
 
-  const handleModelChange = (e) => {
+  const handleModelChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const model = e.target.value;
     setSelectedModel(model);
     localStorage.setItem(MODEL_STORAGE_KEY, model);
@@ -63,7 +75,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
 
     try {
       // Endpoint domyślnie da silnikowi 2 sekundy i poprosi o 3 linie (ustawione w FastAPI)
-      const res = await axios.post(`${API_URL}/chat`, {
+      const res = await axios.post<{ response: string }>(`${API_URL}/chat`, {
         message: userMsg,
         model: selectedModel
       }, {
@@ -96,7 +108,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
     analysisControllerRef.current = controller;
 
     try {
-      const res = await axios.post(`${API_URL}/analyze-game`, {
+      const res = await axios.post<{ response: string; engine_analysis: GameAnalysis }>(`${API_URL}/analyze-game`, {
         message: `Przeanalizuj całą partię z perspektywy gracza ${playerUsername}.`,
         model: selectedModel,
       }, {
@@ -131,7 +143,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
       .catch((err) => console.error("Nie udało się przerwać analizy na backendzie:", err));
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();

@@ -4,17 +4,23 @@ const PAD_X = 12;
 const PAD_Y = 12;
 const MAX_EVAL = 10;
 
-const clamp = (value) => Math.max(-MAX_EVAL, Math.min(MAX_EVAL, value));
+const clamp = (value: number) => Math.max(-MAX_EVAL, Math.min(MAX_EVAL, value));
 
-export default function EvaluationChart({ data, currentPly, onNavigate }) {
+interface EvaluationChartProps {
+  data?: EvaluationPoint[];
+  currentPly: number;
+  onNavigate: (ply: number) => void;
+}
+
+export default function EvaluationChart({ data, currentPly, onNavigate }: EvaluationChartProps) {
   if (!data?.length) return null;
 
   const plotWidth = WIDTH - PAD_X * 2;
   const plotHeight = HEIGHT - PAD_Y * 2;
   const zeroY = PAD_Y + plotHeight / 2;
-  const lastPly = Math.max(data.at(-1).ply, 1);
-  const xFor = (ply) => PAD_X + (ply / lastPly) * plotWidth;
-  const yFor = (evaluation) => zeroY - (clamp(evaluation) / MAX_EVAL) * (plotHeight / 2);
+  const lastPly = Math.max(data.at(-1)!.ply, 1);
+  const xFor = (ply: number) => PAD_X + (ply / lastPly) * plotWidth;
+  const yFor = (evaluation: number) => zeroY - (clamp(evaluation) / MAX_EVAL) * (plotHeight / 2);
   const linePoints = data.map((point) => `${xFor(point.ply)},${yFor(point.evaluation)}`).join(" ");
   const areaPoints = `${PAD_X},${zeroY} ${linePoints} ${xFor(lastPly)},${zeroY}`;
   const activePoint = data.find((point) => point.ply === currentPly);
@@ -84,3 +90,4 @@ export default function EvaluationChart({ data, currentPly, onNavigate }) {
     </div>
   );
 }
+import type { EvaluationPoint } from "../types";

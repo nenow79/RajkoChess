@@ -1,4 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import type { ChessComGame, ImportedGame } from "../types";
+
+interface ChessComPanelProps {
+  username: string;
+  games: ChessComGame[];
+  isLoading: boolean;
+  importedGame: ImportedGame | null;
+  onImport: (game: ChessComGame) => void;
+  onRefresh: (username?: string) => void;
+  onUsernameChange: (username: string) => void;
+}
 
 export default function ChessComPanel({
   username,
@@ -8,15 +19,15 @@ export default function ChessComPanel({
   onImport,
   onRefresh,
   onUsernameChange,
-}) {
+}: ChessComPanelProps) {
   const [draftUsername, setDraftUsername] = useState(username);
   const [isOpen, setIsOpen] = useState(false);
-  const closeButtonRef = useRef(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    const handleKeyDown = (event) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setIsOpen(false);
     };
 
@@ -31,11 +42,11 @@ export default function ChessComPanel({
     };
   }, [isOpen]);
 
-  const formatDate = (value) => value
+  const formatDate = (value: string | null) => value
     ? new Intl.DateTimeFormat("pl-PL", { dateStyle: "short", timeStyle: "short" }).format(new Date(value))
     : "brak daty";
 
-  const formatMoveCount = (count) => {
+  const formatMoveCount = (count: number | null) => {
     if (count == null) return "";
     const lastTwoDigits = count % 100;
     const lastDigit = count % 10;
@@ -44,14 +55,14 @@ export default function ChessComPanel({
     return ` · ${count} ${suffix}`;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const normalizedUsername = draftUsername.trim();
     setDraftUsername(normalizedUsername);
     onUsernameChange(normalizedUsername);
   };
 
-  const handleImport = (game) => {
+  const handleImport = (game: ChessComGame) => {
     onImport(game);
     setIsOpen(false);
   };
@@ -78,7 +89,7 @@ export default function ChessComPanel({
             role="dialog"
             aria-modal="true"
             aria-labelledby="chesscom-modal-title"
-            onMouseDown={(event) => event.stopPropagation()}
+            onMouseDown={(event: MouseEvent<HTMLDivElement>) => event.stopPropagation()}
           >
             <div className="chesscom-modal-header">
               <h2 id="chesscom-modal-title">Partie Chess.com</h2>

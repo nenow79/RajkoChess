@@ -1,4 +1,11 @@
-export default function StockfishPanel({ data, isAnalyzing }) {
+import type { PositionAnalysis } from "../types";
+
+interface StockfishPanelProps {
+  data: PositionAnalysis | null;
+  isAnalyzing: boolean;
+}
+
+export default function StockfishPanel({ data, isAnalyzing }: StockfishPanelProps) {
   return (
     <div className="side-panel engine-panel">
       <h3 className="panel-title">
@@ -19,7 +26,7 @@ export default function StockfishPanel({ data, isAnalyzing }) {
               Ocena silnika (Głębokość: {data.variations[0]?.depth || '?'})
             </div>
             <div className="evaluation-score">
-              {data.variations[0]?.evaluation > 0 ? '+' : ''}{data.variations[0]?.evaluation}
+              {typeof data.variations[0]?.evaluation === "number" && data.variations[0].evaluation > 0 ? '+' : ''}{data.variations[0]?.evaluation}
             </div>
           </div>
 
@@ -32,7 +39,7 @@ export default function StockfishPanel({ data, isAnalyzing }) {
               <div key={index} className="variation-card">
                 <div className="variation-header">
                   <span className="variation-score">
-                    {variant.evaluation > 0 ? '+' : ''}{variant.evaluation}
+                    {typeof variant.evaluation === "number" && variant.evaluation > 0 ? '+' : ''}{variant.evaluation}
                   </span>
                   <span className="variation-depth">
                     Głębokość: {variant.depth}
