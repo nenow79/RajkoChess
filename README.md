@@ -64,6 +64,12 @@ LLM_MODEL=google/gemini-3-flash-preview
 BOT_COMMENTARY_MODEL=sao10k/l3-lunaris-8b
 BOT_DB_PATH=./data/bots.sqlite3
 LICHESS_API_TOKEN=
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=chess_app
+POSTGRES_USER=chess_app
+POSTGRES_PASSWORD=
+POSTGRES_SSLMODE=prefer
 ```
 
 `LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu domyślnego z kodu.
@@ -71,6 +77,22 @@ LICHESS_API_TOKEN=
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
 `BOT_DB_PATH` wskazuje bazę SQLite ze wspólnymi profilami botów. Przy pierwszym uruchomieniu backend automatycznie tworzy schemat oraz trzy profile startowe. Aktywne partie są trzymane w pamięci i kończą się przy restarcie backendu, natomiast profile botów pozostają zapisane.
+
+Pola `POSTGRES_*` konfigurują docelową bazę danych kont i danych użytkowników.
+Po uzupełnieniu danych połączenie można sprawdzić bez modyfikowania bazy:
+
+```bash
+cd backend
+../.venv/bin/python -m scripts.check_database
+```
+
+Migracje PostgreSQL są obsługiwane przez Alembic:
+
+```bash
+cd backend
+../.venv/bin/alembic current
+../.venv/bin/alembic upgrade head
+```
 
 ## Szybkie uruchomienie
 
