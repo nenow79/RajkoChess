@@ -37,3 +37,7 @@ pnpm-debug.log*
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local product notes and agent context (intentionally not versioned)
+PROJECT_CONTEXT.local.md
+AGENTS.md
