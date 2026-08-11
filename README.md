@@ -99,7 +99,7 @@ cd backend
 Po uruchomieniu backendu otwórz `http://127.0.0.1:8000/docs` i rozwiń sekcję
 `Authentication`:
 
-1. Wywołaj `POST /api/auth/register`. Hasło musi mieć co najmniej 15 znaków.
+1. Wywołaj `POST /api/auth/register`. Hasło musi mieć co najmniej 10 znaków.
 2. Wywołaj `POST /api/auth/login` tym samym adresem i hasłem. Odpowiedź zawiera
    `csrf_token`, a przeglądarka automatycznie zapisuje bezpieczne cookie sesji.
 3. Wywołaj `GET /api/auth/me`. Powinien zwrócić dane zalogowanego użytkownika.

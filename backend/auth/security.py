@@ -19,8 +19,8 @@ COMMON_PASSWORDS = frozenset(
 
 
 def validate_password_strength(password: str) -> str:
-    if len(password) < 15:
-        raise ValueError("Hasło musi mieć co najmniej 15 znaków")
+    if len(password) < 10:
+        raise ValueError("Hasło musi mieć co najmniej 10 znaków")
     if len(password) > 128:
         raise ValueError("Hasło może mieć maksymalnie 128 znaków")
     if password.casefold() in COMMON_PASSWORDS:

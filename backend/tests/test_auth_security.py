@@ -34,9 +34,12 @@ class PasswordSecurityTests(unittest.TestCase):
 class AuthSchemaTests(unittest.TestCase):
     def test_registration_rejects_short_and_common_passwords(self):
         with self.assertRaises(ValidationError):
-            RegisterRequest(email="test@example.com", password="za krótkie")
+            RegisterRequest(email="test@example.com", password="9znakow!!")
         with self.assertRaises(ValidationError):
             RegisterRequest(email="test@example.com", password="passwordpassword")
+
+        accepted = RegisterRequest(email="test@example.com", password="10znakow!!")
+        self.assertEqual(accepted.password, "10znakow!!")
 
     def test_auth_routes_are_exposed_in_openapi(self):
         paths = app.openapi()["paths"]
