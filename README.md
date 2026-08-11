@@ -110,6 +110,32 @@ Po uruchomieniu backendu otwórz `http://127.0.0.1:8000/docs` i rozwiń sekcję
 W razie utraty tokenu CSRF zalogowany użytkownik może go odczytać przez
 `GET /api/auth/csrf`. Swagger działa na tym samym originie co API, dlatego cookie
 `HttpOnly` jest przesyłane automatycznie i nie trzeba wpisywać go w formularzu.
+Przycisk `Authorize` nie służy do tego przepływu: Swagger UI nie potrafi ustawić
+cookie uwierzytelniającego przez „Try it out” z powodu ograniczeń przeglądarki.
+
+### Nadanie pierwszej roli administratora
+
+Konto należy najpierw utworzyć zwykłym endpointem rejestracji. Następnie rolę
+można nadać bezpośrednio w PostgreSQL:
+
+```sql
+UPDATE users
+SET system_role = 'admin', updated_at = now()
+WHERE email = lower('twoj-email@example.com');
+```
+
+Wynik można sprawdzić przez `GET /api/auth/me` albo zapytaniem:
+
+```sql
+SELECT id, email, system_role, status
+FROM users
+WHERE email = lower('twoj-email@example.com');
+```
+
+Roli administratora nie wolno przyjmować z publicznego formularza rejestracji.
+Na obecnym etapie rola jest zapisywana i zwracana przez API, ale centralne
+egzekwowanie `require_admin`, własności zasobów i audytu jest kolejnym osobnym
+etapem wdrożenia.
 
 ## Szybkie uruchomienie
 
