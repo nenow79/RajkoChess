@@ -23,11 +23,13 @@ from chess_logic.llm_agent import (
 from chess_logic.bots import BotStore
 from chess_logic.bot_game import BotGameManager
 from chess_logic.openings import find_opening, search_openings, resolve_opening
+from auth.router import router as auth_router
 
 # Ładowanie zmiennych środowiskowych z .env
 load_dotenv()
 
 app = FastAPI(title="Chess API")
+app.include_router(auth_router)
 
 class ChatRequest(BaseModel):
     message: str = ""

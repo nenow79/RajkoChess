@@ -94,6 +94,23 @@ cd backend
 ../.venv/bin/alembic upgrade head
 ```
 
+### Test logowania w Swagger UI
+
+Po uruchomieniu backendu otwórz `http://127.0.0.1:8000/docs` i rozwiń sekcję
+`Authentication`:
+
+1. Wywołaj `POST /api/auth/register`. Hasło musi mieć co najmniej 15 znaków.
+2. Wywołaj `POST /api/auth/login` tym samym adresem i hasłem. Odpowiedź zawiera
+   `csrf_token`, a przeglądarka automatycznie zapisuje bezpieczne cookie sesji.
+3. Wywołaj `GET /api/auth/me`. Powinien zwrócić dane zalogowanego użytkownika.
+4. Aby sprawdzić wylogowanie, wywołaj `POST /api/auth/logout` i w polu
+   `X-CSRF-Token` wklej wartość `csrf_token` zwróconą przez logowanie.
+5. Ponowne `GET /api/auth/me` powinno zwrócić `401`.
+
+W razie utraty tokenu CSRF zalogowany użytkownik może go odczytać przez
+`GET /api/auth/csrf`. Swagger działa na tym samym originie co API, dlatego cookie
+`HttpOnly` jest przesyłane automatycznie i nie trzeba wpisywać go w formularzu.
+
 ## Szybkie uruchomienie
 
 Najprościej uruchomić oba serwery skryptem:

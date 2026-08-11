@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -26,6 +26,37 @@ class Settings(BaseSettings):
         default=SecretStr(""), validation_alias="POSTGRES_PASSWORD"
     )
     postgres_sslmode: str = Field(default="prefer", validation_alias="POSTGRES_SSLMODE")
+    auth_cookie_name: str = Field(
+        default="rajko_session", validation_alias="AUTH_COOKIE_NAME"
+    )
+    auth_csrf_cookie_name: str = Field(
+        default="rajko_csrf", validation_alias="AUTH_CSRF_COOKIE_NAME"
+    )
+    auth_cookie_secure: bool = Field(
+        default=False, validation_alias="AUTH_COOKIE_SECURE"
+    )
+    auth_session_idle_days: int = Field(
+        default=7, gt=0, validation_alias="AUTH_SESSION_IDLE_DAYS"
+    )
+    auth_session_absolute_days: int = Field(
+        default=30, gt=0, validation_alias="AUTH_SESSION_ABSOLUTE_DAYS"
+    )
+
+    @model_validator(mode="after")
+    def validate_auth_cookie_settings(self) -> "Settings":
+        if self.auth_session_absolute_days < self.auth_session_idle_days:
+            raise ValueError(
+                "AUTH_SESSION_ABSOLUTE_DAYS nie może być mniejsze niż "
+                "AUTH_SESSION_IDLE_DAYS"
+            )
+        if self.auth_cookie_name == self.auth_csrf_cookie_name:
+            raise ValueError("Cookie sesji i CSRF muszą mieć różne nazwy")
+        uses_host_prefix = self.auth_cookie_name.startswith(
+            "__Host-"
+        ) or self.auth_csrf_cookie_name.startswith("__Host-")
+        if uses_host_prefix and not self.auth_cookie_secure:
+            raise ValueError("Cookie z prefiksem __Host- wymaga AUTH_COOKIE_SECURE=true")
+        return self
 
     @property
     def database_url(self) -> URL:
