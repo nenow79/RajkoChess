@@ -2,16 +2,16 @@ import secrets
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
-from fastapi.security import APIKeyCookie
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from auth.security import hash_secret
-from auth.service import find_active_session
 from db.models import AuthSession, User
 from db.session import get_db_session
+from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import APIKeyCookie
 from settings import get_settings
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth.roles import ensure_admin
+from auth.security import hash_secret
+from auth.service import find_active_session
 
 settings = get_settings()
 session_cookie = APIKeyCookie(
@@ -65,3 +65,15 @@ async def require_csrf(
             detail="Nieprawidłowy token CSRF",
         )
     return current
+
+
+async def require_admin(
+    current: Annotated[CurrentAuth, Depends(get_current_auth)],
+) -> CurrentAuth:
+    return ensure_admin(current)
+
+
+async def require_admin_write(
+    current: Annotated[CurrentAuth, Depends(require_csrf)],
+) -> CurrentAuth:
+    return ensure_admin(current)

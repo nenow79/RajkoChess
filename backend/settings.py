@@ -5,7 +5,6 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
-
 ENV_FILE = Path(__file__).resolve().with_name(".env")
 
 
@@ -41,6 +40,22 @@ class Settings(BaseSettings):
     auth_session_absolute_days: int = Field(
         default=30, gt=0, validation_alias="AUTH_SESSION_ABSOLUTE_DAYS"
     )
+    public_app_url: str = Field(
+        default="http://localhost:5173", validation_alias="PUBLIC_APP_URL"
+    )
+    smtp_host: str = Field(default="smtp.mail.ovh.net", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=465, gt=0, le=65535, validation_alias="SMTP_PORT")
+    smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
+    smtp_password: SecretStr = Field(
+        default=SecretStr(""), validation_alias="SMTP_PASSWORD"
+    )
+    smtp_from_email: str = Field(default="", validation_alias="SMTP_FROM_EMAIL")
+    smtp_from_name: str = Field(
+        default="Rajko Chess", validation_alias="SMTP_FROM_NAME"
+    )
+    email_verification_hours: int = Field(
+        default=24, gt=0, le=168, validation_alias="EMAIL_VERIFICATION_HOURS"
+    )
 
     @model_validator(mode="after")
     def validate_auth_cookie_settings(self) -> "Settings":
@@ -55,8 +70,24 @@ class Settings(BaseSettings):
             "__Host-"
         ) or self.auth_csrf_cookie_name.startswith("__Host-")
         if uses_host_prefix and not self.auth_cookie_secure:
-            raise ValueError("Cookie z prefiksem __Host- wymaga AUTH_COOKIE_SECURE=true")
+            raise ValueError(
+                "Cookie z prefiksem __Host- wymaga AUTH_COOKIE_SECURE=true"
+            )
+        self.public_app_url = self.public_app_url.rstrip("/")
         return self
+
+    def require_smtp(self) -> None:
+        missing = [
+            name
+            for name, value in {
+                "SMTP_USERNAME": self.smtp_username,
+                "SMTP_PASSWORD": self.smtp_password.get_secret_value(),
+                "SMTP_FROM_EMAIL": self.smtp_from_email,
+            }.items()
+            if not value
+        ]
+        if missing:
+            raise RuntimeError("Brak konfiguracji poczty: " + ", ".join(missing))
 
     @property
     def database_url(self) -> URL:

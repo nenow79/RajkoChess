@@ -5,14 +5,15 @@ from settings import Settings
 
 class DatabaseSettingsTests(unittest.TestCase):
     def test_database_url_safely_encodes_credentials(self):
-        settings = Settings(
-            _env_file=None,
-            POSTGRES_HOST="localhost",
-            POSTGRES_PORT=5432,
-            POSTGRES_DB="chess db",
-            POSTGRES_USER="chess user",
-            POSTGRES_PASSWORD="secret/@value",
-            POSTGRES_SSLMODE="require",
+        settings = Settings.model_validate(
+            {
+                "POSTGRES_HOST": "localhost",
+                "POSTGRES_PORT": 5432,
+                "POSTGRES_DB": "chess db",
+                "POSTGRES_USER": "chess user",
+                "POSTGRES_PASSWORD": "secret/@value",
+                "POSTGRES_SSLMODE": "require",
+            }
         )
 
         database_url = settings.database_url
@@ -25,12 +26,13 @@ class DatabaseSettingsTests(unittest.TestCase):
         self.assertNotIn("secret/@value", rendered_url)
 
     def test_missing_credentials_are_reported_without_secret_values(self):
-        settings = Settings(
-            _env_file=None,
-            POSTGRES_HOST="localhost",
-            POSTGRES_DB="",
-            POSTGRES_USER="",
-            POSTGRES_PASSWORD="",
+        settings = Settings.model_validate(
+            {
+                "POSTGRES_HOST": "localhost",
+                "POSTGRES_DB": "",
+                "POSTGRES_USER": "",
+                "POSTGRES_PASSWORD": "",
+            }
         )
 
         with self.assertRaisesRegex(

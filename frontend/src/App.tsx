@@ -10,6 +10,10 @@ import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
 import ChessComPanel from "./components/ChessComPanel";
 import { API_URL } from "./config";
 import BotGameMode from "./components/BotGameMode";
+import AuthScreen from "./components/AuthScreen";
+import UserMenu from "./components/UserMenu";
+import VerifyEmailScreen from "./components/VerifyEmailScreen";
+import { useAuth } from "./auth/useAuth";
 import type {
   AppMode,
   BotGame,
@@ -23,19 +27,9 @@ import type {
 } from "./types";
 
 const DEFAULT_CHESSCOM_USERNAME = "nenow79";
-const SESSION_STORAGE_KEY = "rajko-session-id";
 const LICHESS_RATING_BUCKETS = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 
-function getSessionId() {
-  const savedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
-  if (savedSessionId) return savedSessionId;
-
-  const newSessionId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  localStorage.setItem(SESSION_STORAGE_KEY, newSessionId);
-  return newSessionId;
-}
-
-axios.defaults.headers.common["X-Session-Id"] = getSessionId();
+axios.defaults.withCredentials = true;
 
 interface AnalysisWorkspaceProps {
   onModeChange: (mode: AppMode) => void;
@@ -283,9 +277,12 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       {/* Globalny Nagłówek */}
       <header className="app-header">
         <h1>♞ Rajko Chess</h1>
-        <div className="mode-switch" aria-label="Tryb aplikacji">
-          <button className="active" type="button">Analiza</button>
-          <button type="button" onClick={() => onModeChange("game")}>Gra z botem</button>
+        <div className="header-actions">
+          <div className="mode-switch" aria-label="Tryb aplikacji">
+            <button className="active" type="button">Analiza</button>
+            <button type="button" onClick={() => onModeChange("game")}>Gra z botem</button>
+          </div>
+          <UserMenu />
         </div>
       </header>
 
@@ -344,6 +341,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
 }
 
 export default function App() {
+  const { status } = useAuth();
   const [mode, setMode] = useState<AppMode>("analysis");
   const [finishedBotGame, setFinishedBotGame] = useState<BotGame | null>(null);
 
@@ -351,6 +349,16 @@ export default function App() {
     setFinishedBotGame(game);
     setMode("analysis");
   };
+
+  if (window.location.pathname === "/verify-email") {
+    return <VerifyEmailScreen />;
+  }
+
+  if (status === "loading") {
+    return <main className="auth-page"><div className="auth-loading" role="status">♞<span>Sprawdzamy sesję…</span></div></main>;
+  }
+
+  if (status === "anonymous") return <AuthScreen />;
 
   return mode === "game" ? (
     <BotGameMode onModeChange={setMode} onAnalyze={openAnalysis} />

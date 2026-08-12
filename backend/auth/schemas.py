@@ -1,10 +1,10 @@
 import uuid
 from datetime import datetime
 
+from db.models import SystemRole, User, UserStatus
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from auth.security import validate_password_strength
-from db.models import SystemRole, User, UserStatus
 
 
 class RegisterRequest(BaseModel):
@@ -29,6 +29,14 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+
+
+class EmailVerificationRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class EmailVerificationResendRequest(BaseModel):
+    email: EmailStr
 
 
 class UserResponse(BaseModel):
@@ -65,3 +73,7 @@ class CsrfResponse(BaseModel):
 class LogoutResponse(BaseModel):
     logged_out: bool = True
     revoked_sessions: int = 1
+
+
+class MessageResponse(BaseModel):
+    message: str

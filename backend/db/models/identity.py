@@ -16,7 +16,9 @@ if TYPE_CHECKING:
 class Identity(UuidPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "identities"
     __table_args__ = (
-        UniqueConstraint("provider", "provider_subject", name="uq_identities_provider_subject"),
+        UniqueConstraint(
+            "provider", "provider_subject", name="uq_identities_provider_subject"
+        ),
         UniqueConstraint("user_id", "provider", name="uq_identities_user_provider"),
         CheckConstraint(
             "(provider = 'password' AND password_hash IS NOT NULL) OR "

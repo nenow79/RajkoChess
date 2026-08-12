@@ -62,7 +62,6 @@ Pełna konfiguracja może wyglądać tak:
 OPENROUTER_API_KEY=sk-or-...
 LLM_MODEL=google/gemini-3-flash-preview
 BOT_COMMENTARY_MODEL=sao10k/l3-lunaris-8b
-BOT_DB_PATH=./data/bots.sqlite3
 LICHESS_API_TOKEN=
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
@@ -76,7 +75,10 @@ POSTGRES_SSLMODE=prefer
 `BOT_COMMENTARY_MODEL` wybiera model krótkich komentarzy w trybie gry z botem.
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
-`BOT_DB_PATH` wskazuje bazę SQLite ze wspólnymi profilami botów. Przy pierwszym uruchomieniu backend automatycznie tworzy schemat oraz trzy profile startowe. Aktywne partie są trzymane w pamięci i kończą się przy restarcie backendu, natomiast profile botów pozostają zapisane.
+Profile botów są przechowywane w PostgreSQL. Zwykły użytkownik widzi boty
+publiczne i własne prywatne; może tworzyć, edytować i usuwać wyłącznie własne
+boty prywatne. Botami publicznymi zarządza administrator. Aktywne partie nadal
+są trzymane w pamięci i kończą się przy restarcie backendu.
 
 Pola `POSTGRES_*` konfigurują docelową bazę danych kont i danych użytkowników.
 Po uzupełnieniu danych połączenie można sprawdzić bez modyfikowania bazy:
@@ -94,24 +96,60 @@ cd backend
 ../.venv/bin/alembic upgrade head
 ```
 
+Przy przejściu ze starszej wersji można idempotentnie przenieść dotychczasowy
+katalog SQLite. Ze względu na brak historycznych danych właściciela wszystkie
+takie profile zostaną publicznymi botami systemowymi:
+
+```bash
+cd backend
+../.venv/bin/python -m scripts.migrate_bots_to_postgres
+```
+
 ### Test logowania w Swagger UI
 
 Po uruchomieniu backendu otwórz `http://127.0.0.1:8000/docs` i rozwiń sekcję
 `Authentication`:
 
-1. Wywołaj `POST /api/auth/register`. Hasło musi mieć co najmniej 10 znaków.
-2. Wywołaj `POST /api/auth/login` tym samym adresem i hasłem. Odpowiedź zawiera
+1. Skonfiguruj SMTP zgodnie z sekcją „Weryfikacja e-maila” poniżej.
+2. Wywołaj `POST /api/auth/register`. Hasło musi mieć co najmniej 10 znaków.
+3. Otwórz link otrzymany w wiadomości. Frontend wywoła
+   `POST /api/auth/email-verification/confirm` i jednorazowo zużyje token.
+4. Wywołaj `POST /api/auth/login` tym samym adresem i hasłem. Odpowiedź zawiera
    `csrf_token`, a przeglądarka automatycznie zapisuje bezpieczne cookie sesji.
-3. Wywołaj `GET /api/auth/me`. Powinien zwrócić dane zalogowanego użytkownika.
-4. Aby sprawdzić wylogowanie, wywołaj `POST /api/auth/logout` i w polu
+5. Wywołaj `GET /api/auth/me`. Powinien zwrócić dane zalogowanego użytkownika.
+6. Aby sprawdzić wylogowanie, wywołaj `POST /api/auth/logout` i w polu
    `X-CSRF-Token` wklej wartość `csrf_token` zwróconą przez logowanie.
-5. Ponowne `GET /api/auth/me` powinno zwrócić `401`.
+7. Ponowne `GET /api/auth/me` powinno zwrócić `401`.
 
 W razie utraty tokenu CSRF zalogowany użytkownik może go odczytać przez
 `GET /api/auth/csrf`. Swagger działa na tym samym originie co API, dlatego cookie
 `HttpOnly` jest przesyłane automatycznie i nie trzeba wpisywać go w formularzu.
 Przycisk `Authorize` nie służy do tego przepływu: Swagger UI nie potrafi ustawić
 cookie uwierzytelniającego przez „Try it out” z powodu ograniczeń przeglądarki.
+
+### Weryfikacja e-maila
+
+Backend wysyła wiadomości przez uwierzytelnione SMTP z SSL/TLS. W lokalnym
+`backend/.env` lub w `/etc/rajko-chess/backend.env` ustaw:
+
+```dotenv
+PUBLIC_APP_URL=https://twoj-publiczny-adres.example
+SMTP_HOST=smtp.mail.ovh.net
+SMTP_PORT=465
+SMTP_USERNAME=noreply@rajko.pl
+SMTP_PASSWORD=uzupelnij-wylacznie-w-sekretnym-pliku-env
+SMTP_FROM_EMAIL=noreply@rajko.pl
+SMTP_FROM_NAME=Rajko Chess
+EMAIL_VERIFICATION_HOURS=24
+```
+
+Nie wpisuj hasła SMTP do repozytorium. Nowe konto nie może się zalogować przed
+potwierdzeniem adresu. Link jest jednorazowy; wygasa domyślnie po 24 godzinach.
+Nowy link można zamówić przez `POST /api/auth/email-verification/resend`.
+Odpowiedź tego endpointu jest jednakowa niezależnie od tego, czy konto istnieje.
+
+Migracja `20260812_0004` oznacza konta istniejące przed wdrożeniem jako
+zweryfikowane, dzięki czemu aktualni użytkownicy nie tracą dostępu.
 
 ### Nadanie pierwszej roli administratora
 
@@ -133,9 +171,26 @@ WHERE email = lower('twoj-email@example.com');
 ```
 
 Roli administratora nie wolno przyjmować z publicznego formularza rejestracji.
-Na obecnym etapie rola jest zapisywana i zwracana przez API, ale centralne
-egzekwowanie `require_admin`, własności zasobów i audytu jest kolejnym osobnym
-etapem wdrożenia.
+Rola jest już egzekwowana przy zarządzaniu publicznymi botami. Pełne polityki
+administracyjne są dostępne pod `/api/admin`:
+
+- `GET /api/admin/users` — lista użytkowników,
+- `PATCH /api/admin/users/{id}` — zmiana roli lub statusu z obowiązkowym powodem,
+- `GET /api/admin/users/{id}/entitlements` oraz
+  `PUT /api/admin/users/{id}/entitlements/{key}` — podgląd i ręczne nadawanie
+  uprawnień produktowych,
+- `POST /api/admin/bots/{id}/inspect` — jawny, audytowany dostęp do prywatnego
+  bota z obowiązkowym powodem,
+- `GET /api/admin/audit-log` — dziennik operacji administracyjnych.
+
+Operacje zmieniające stan wymagają cookie sesji oraz `X-CSRF-Token`. Nie można
+zmienić własnej roli ani zablokować własnego konta przez API administratora.
+Zablokowanie użytkownika unieważnia jego aktywne sesje.
+
+Uprawnienia produktowe są niezależne od nazw planów. Początkowy rejestr obejmuje
+`basic_analysis`, `ai_game_review`, `custom_bot`, `training_plan` i
+`priority_analysis`. Administrator omija ograniczenia produktowe, ale nadal
+podlega kontrolom sesji, CSRF i audytowi.
 
 ## Szybkie uruchomienie
 

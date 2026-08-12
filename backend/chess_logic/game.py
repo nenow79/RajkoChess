@@ -4,6 +4,7 @@ from io import StringIO
 import chess
 import chess.pgn
 
+
 class ChessGame:
     def __init__(self):
         self.board = chess.Board()
@@ -139,7 +140,8 @@ class ChessGame:
             move_number = (self.current_ply + 1) // 2
             move_label = (
                 f"{move_number}. {last_move_san}"
-                if self.current_ply % 2 else f"{move_number}... {last_move_san}"
+                if self.current_ply % 2
+                else f"{move_number}... {last_move_san}"
             )
 
         return {
@@ -150,7 +152,9 @@ class ChessGame:
             "current_ply": self.current_ply,
             "total_plies": len(self.imported_moves),
             "in_variation": self.in_variation,
-            "variation_ply_count": max(0, len(self.board.move_stack) - self.current_ply) if self.imported_pgn else 0,
+            "variation_ply_count": max(0, len(self.board.move_stack) - self.current_ply)
+            if self.imported_pgn
+            else 0,
             "move_label": move_label,
             "last_move_san": last_move_san,
             "navigation_move_uci": navigation_move.uci() if navigation_move else None,

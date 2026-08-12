@@ -4,7 +4,6 @@ from io import StringIO
 import chess.pgn
 import httpx
 
-
 BASE_URL = "https://api.chess.com/pub/player"
 HEADERS = {
     "User-Agent": "RajkoChessAnalyser/1.0 (local personal chess analysis app)",
@@ -24,7 +23,8 @@ async def get_recent_games(username: str, limit: int = 12) -> list[dict]:
             response.raise_for_status()
 
             standard_games = [
-                game for game in response.json().get("games", [])
+                game
+                for game in response.json().get("games", [])
                 if game.get("rules") == "chess"
             ]
             recent_games.extend(reversed(standard_games))
@@ -52,7 +52,8 @@ def _summarize_game(game: dict, username: str) -> dict:
         "fen": game.get("fen"),
         "played_at": (
             datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
-            if end_time else None
+            if end_time
+            else None
         ),
         "time_class": game.get("time_class"),
         "time_control": game.get("time_control"),

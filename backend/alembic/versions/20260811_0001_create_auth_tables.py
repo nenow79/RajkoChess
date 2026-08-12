@@ -4,17 +4,17 @@ Revision ID: 20260811_0001
 Revises:
 Create Date: 2026-08-11
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
-
 revision: str = "20260811_0001"
-down_revision: Union[str, Sequence[str], None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 user_status_enum = postgresql.ENUM(
     "active", "blocked", "deleted", name="user_status", create_type=False
@@ -41,7 +41,9 @@ def upgrade() -> None:
         sa.Column("email", sa.String(length=320), nullable=False),
         sa.Column("display_name", sa.String(length=80), nullable=True),
         sa.Column("status", user_status_enum, server_default="active", nullable=False),
-        sa.Column("system_role", system_role_enum, server_default="user", nullable=False),
+        sa.Column(
+            "system_role", system_role_enum, server_default="user", nullable=False
+        ),
         sa.Column("email_verified_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -57,7 +59,9 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.CheckConstraint("email = lower(email)", name=op.f("ck_users_email_normalized")),
+        sa.CheckConstraint(
+            "email = lower(email)", name=op.f("ck_users_email_normalized")
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_users"),
         sa.UniqueConstraint("email", name="uq_users_email"),
     )
@@ -87,7 +91,10 @@ def upgrade() -> None:
             name=op.f("ck_identities_password_hash_matches_provider"),
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name="fk_identities_user_id_users", ondelete="CASCADE"
+            ["user_id"],
+            ["users.id"],
+            name="fk_identities_user_id_users",
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_identities"),
         sa.UniqueConstraint(
@@ -126,13 +133,18 @@ def upgrade() -> None:
             name=op.f("ck_auth_sessions_csrf_token_hash_length"),
         ),
         sa.CheckConstraint(
-            "expires_at <= absolute_expires_at", name=op.f("ck_auth_sessions_expiry_order")
+            "expires_at <= absolute_expires_at",
+            name=op.f("ck_auth_sessions_expiry_order"),
         ),
         sa.CheckConstraint(
-            "octet_length(token_hash) = 32", name=op.f("ck_auth_sessions_token_hash_length")
+            "octet_length(token_hash) = 32",
+            name=op.f("ck_auth_sessions_token_hash_length"),
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name="fk_auth_sessions_user_id_users", ondelete="CASCADE"
+            ["user_id"],
+            ["users.id"],
+            name="fk_auth_sessions_user_id_users",
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_auth_sessions"),
         sa.UniqueConstraint("token_hash", name="uq_auth_sessions_token_hash"),
@@ -163,13 +175,18 @@ def upgrade() -> None:
             name=op.f("ck_auth_tokens_consumed_after_creation"),
         ),
         sa.CheckConstraint(
-            "expires_at > created_at", name=op.f("ck_auth_tokens_expires_after_creation")
+            "expires_at > created_at",
+            name=op.f("ck_auth_tokens_expires_after_creation"),
         ),
         sa.CheckConstraint(
-            "octet_length(token_hash) = 32", name=op.f("ck_auth_tokens_token_hash_length")
+            "octet_length(token_hash) = 32",
+            name=op.f("ck_auth_tokens_token_hash_length"),
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name="fk_auth_tokens_user_id_users", ondelete="CASCADE"
+            ["user_id"],
+            ["users.id"],
+            name="fk_auth_tokens_user_id_users",
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_auth_tokens"),
         sa.UniqueConstraint("token_hash", name="uq_auth_tokens_token_hash"),

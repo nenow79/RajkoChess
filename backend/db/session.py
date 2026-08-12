@@ -1,14 +1,13 @@
 from collections.abc import AsyncIterator
 from functools import lru_cache
 
+from settings import get_settings
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-
-from settings import get_settings
 
 
 @lru_cache

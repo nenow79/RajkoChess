@@ -1,14 +1,12 @@
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
-from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
 import db.models  # noqa: F401 -- registers all models in Base.metadata
+from alembic import context
 from db.base import Base
 from settings import get_settings
-
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 
@@ -17,7 +15,9 @@ if config.config_file_name is not None:
 
 config.set_main_option(
     "sqlalchemy.url",
-    get_settings().database_url.render_as_string(hide_password=False).replace("%", "%%"),
+    get_settings()
+    .database_url.render_as_string(hide_password=False)
+    .replace("%", "%%"),
 )
 target_metadata = Base.metadata
 

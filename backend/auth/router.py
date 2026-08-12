@@ -1,37 +1,52 @@
+import logging
 import secrets
 from typing import Annotated
 
+from db.models import UserStatus
+from db.session import get_db_session
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.cookies import clear_auth_cookies, set_auth_cookies, set_csrf_cookie
 from auth.dependencies import CurrentAuth, csrf_cookie, get_current_auth, require_csrf
+from auth.email import EmailDeliveryError, send_verification_email
+from auth.policies import all_effective_entitlements
 from auth.schemas import (
     CsrfResponse,
+    EmailVerificationRequest,
+    EmailVerificationResendRequest,
     LoginRequest,
     LoginResponse,
     LogoutResponse,
+    MessageResponse,
     RegisterRequest,
     UserResponse,
 )
 from auth.security import generate_secret, hash_secret
 from auth.service import (
     DuplicateEmailError,
+    EmailNotVerifiedError,
     InactiveUserError,
+    InvalidAuthTokenError,
     InvalidCredentialsError,
     authenticate_user,
+    create_email_verification_token,
     create_session,
+    find_user_for_email_verification,
     register_user,
     revoke_all_user_sessions,
     revoke_session,
+    supersede_email_verification_tokens,
+    verify_email_token,
 )
-from db.session import get_db_session
-
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+logger = logging.getLogger(__name__)
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
 async def register(
     payload: RegisterRequest,
     db: Annotated[AsyncSession, Depends(get_db_session)],
@@ -48,6 +63,20 @@ async def register(
             status_code=status.HTTP_409_CONFLICT,
             detail="Konto z tym adresem e-mail już istnieje",
         )
+    created_token = await create_email_verification_token(db, user=user)
+    try:
+        await send_verification_email(recipient=user.email, token=created_token.token)
+    except EmailDeliveryError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Konto zostało utworzone, ale wiadomość nie mogła zostać wysłana. "
+                "Spróbuj wysłać link ponownie."
+            ),
+        )
+    await supersede_email_verification_tokens(
+        db, user_id=user.id, keep_token_id=created_token.model.id
+    )
     return UserResponse.from_user(user)
 
 
@@ -73,6 +102,11 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Konto jest nieaktywne",
         )
+    except EmailNotVerifiedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Potwierdź adres e-mail przed zalogowaniem",
+        )
 
     created = await create_session(
         db, user=user, user_agent=request.headers.get("user-agent")
@@ -85,6 +119,52 @@ async def login(
     return LoginResponse(
         user=UserResponse.from_user(user), csrf_token=created.csrf_token
     )
+
+
+@router.post("/email-verification/confirm", response_model=MessageResponse)
+async def confirm_email(
+    payload: EmailVerificationRequest,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    try:
+        await verify_email_token(db, token=payload.token)
+    except InvalidAuthTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Link potwierdzający jest nieprawidłowy, wygasł lub został już użyty",
+        )
+    return MessageResponse(message="Adres e-mail został potwierdzony")
+
+
+@router.post("/email-verification/resend", response_model=MessageResponse)
+async def resend_email_verification(
+    payload: EmailVerificationResendRequest,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    generic_message = (
+        "Jeśli konto istnieje i wymaga potwierdzenia, wysłaliśmy nowy link."
+    )
+    user = await find_user_for_email_verification(db, email=str(payload.email))
+    if (
+        user is None
+        or user.email_verified_at is not None
+        or user.status != UserStatus.ACTIVE
+    ):
+        return MessageResponse(message=generic_message)
+
+    created_token = await create_email_verification_token(db, user=user)
+    try:
+        await send_verification_email(recipient=user.email, token=created_token.token)
+    except EmailDeliveryError:
+        logger.exception(
+            "Nie udało się wysłać wiadomości weryfikacyjnej do użytkownika %s",
+            user.id,
+        )
+        return MessageResponse(message=generic_message)
+    await supersede_email_verification_tokens(
+        db, user_id=user.id, keep_token_id=created_token.model.id
+    )
+    return MessageResponse(message=generic_message)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -111,6 +191,14 @@ async def get_csrf_token(
     await db.commit()
     set_csrf_cookie(response, csrf_token=new_csrf)
     return CsrfResponse(csrf_token=new_csrf)
+
+
+@router.get("/entitlements")
+async def entitlements(
+    current: Annotated[CurrentAuth, Depends(get_current_auth)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return {"entitlements": await all_effective_entitlements(db, user=current.user)}
 
 
 def secrets_compare_hash(secret: str, expected_hash: bytes) -> bool:

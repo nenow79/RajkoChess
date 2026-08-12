@@ -77,6 +77,7 @@ export interface PositionAnalysis {
 
 export type BotStyleKey = "aggression" | "tacticality" | "risk" | "materialism" | "simplification";
 export type BotStyle = Record<BotStyleKey, number>;
+export type BotVisibility = "public" | "private";
 
 export interface BotOpening {
   opening_id: string;
@@ -101,9 +102,18 @@ export interface BotProfile {
   style: BotStyle;
   openings: BotOpening[];
   phrases: Record<string, string>;
+  visibility: BotVisibility;
+  owner_id: string | null;
+  can_edit: boolean;
+  can_delete: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-export type BotDraft = Omit<BotProfile, "id"> & { id?: string };
+export type BotDraft = Pick<
+  BotProfile,
+  "name" | "description" | "avatar" | "target_elo" | "style" | "openings" | "phrases"
+>;
 
 export interface BotGame {
   fen: string;

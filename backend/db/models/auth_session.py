@@ -4,7 +4,15 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, LargeBinary, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    LargeBinary,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -18,7 +26,9 @@ class AuthSession(UuidPrimaryKeyMixin, Base):
     __tablename__ = "auth_sessions"
     __table_args__ = (
         CheckConstraint("octet_length(token_hash) = 32", name="token_hash_length"),
-        CheckConstraint("octet_length(csrf_token_hash) = 32", name="csrf_token_hash_length"),
+        CheckConstraint(
+            "octet_length(csrf_token_hash) = 32", name="csrf_token_hash_length"
+        ),
         CheckConstraint("expires_at <= absolute_expires_at", name="expiry_order"),
         Index("ix_auth_sessions_user_id_revoked_at", "user_id", "revoked_at"),
     )
@@ -26,7 +36,9 @@ class AuthSession(UuidPrimaryKeyMixin, Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False, unique=True)
+    token_hash: Mapped[bytes] = mapped_column(
+        LargeBinary(32), nullable=False, unique=True
+    )
     csrf_token_hash: Mapped[bytes] = mapped_column(LargeBinary(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -34,7 +46,9 @@ class AuthSession(UuidPrimaryKeyMixin, Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     absolute_expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

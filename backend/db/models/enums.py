@@ -12,6 +12,11 @@ class SystemRole(str, Enum):
     ADMIN = "admin"
 
 
+class BotVisibility(str, Enum):
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+
 class AuthTokenType(str, Enum):
     EMAIL_VERIFICATION = "email_verification"
     PASSWORD_RESET = "password_reset"

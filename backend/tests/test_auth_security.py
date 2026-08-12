@@ -1,12 +1,14 @@
 import unittest
-
-from fastapi import Response
-from pydantic import ValidationError
+import uuid
+from types import SimpleNamespace
 
 from auth.cookies import clear_auth_cookies, set_auth_cookies
+from auth.dependencies import CurrentAuth
 from auth.schemas import RegisterRequest
 from auth.security import PASSWORD_HASH, generate_secret, hash_secret
-from main import app
+from fastapi import Response
+from main import app, get_session_id
+from pydantic import ValidationError
 
 
 class PasswordSecurityTests(unittest.TestCase):
@@ -47,10 +49,39 @@ class AuthSchemaTests(unittest.TestCase):
         self.assertIn("/api/auth/login", paths)
         self.assertIn("/api/auth/me", paths)
         self.assertIn("/api/auth/logout", paths)
+        self.assertIn("/api/auth/email-verification/confirm", paths)
+        self.assertIn("/api/auth/email-verification/resend", paths)
         logout_parameters = paths["/api/auth/logout"]["post"]["parameters"]
         self.assertTrue(
             any(parameter["name"] == "X-CSRF-Token" for parameter in logout_parameters)
         )
+
+    def test_game_state_uses_authenticated_cookie_not_client_session_header(self):
+        paths = app.openapi()["paths"]
+        for path, method in (
+            ("/api/position", "get"),
+            ("/api/move", "post"),
+            ("/api/bot-games/current", "get"),
+            ("/api/analyze-game", "post"),
+        ):
+            operation = paths[path][method]
+            parameters = operation.get("parameters", [])
+            self.assertFalse(
+                any(
+                    parameter["name"].lower() == "x-session-id"
+                    for parameter in parameters
+                )
+            )
+            self.assertIn({"SessionCookie": []}, operation.get("security", []))
+
+    def test_game_state_key_comes_from_database_session_id(self):
+        database_session_id = uuid.uuid4()
+        current = CurrentAuth(
+            session=SimpleNamespace(id=database_session_id),  # type: ignore[arg-type]
+            user=SimpleNamespace(),  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(get_session_id(current), str(database_session_id))
 
 
 class AuthCookieTests(unittest.TestCase):
@@ -66,8 +97,12 @@ class AuthCookieTests(unittest.TestCase):
         ]
 
         self.assertEqual(len(headers), 2)
-        session_header = next(value for value in headers if value.startswith("rajko_session="))
-        csrf_header = next(value for value in headers if value.startswith("rajko_csrf="))
+        session_header = next(
+            value for value in headers if value.startswith("rajko_session=")
+        )
+        csrf_header = next(
+            value for value in headers if value.startswith("rajko_csrf=")
+        )
         self.assertIn("HttpOnly", session_header)
         self.assertNotIn("HttpOnly", csrf_header)
         self.assertTrue(all("SameSite=lax" in value for value in headers))

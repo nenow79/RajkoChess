@@ -4,7 +4,6 @@ import secrets
 from fastapi.concurrency import run_in_threadpool
 from pwdlib import PasswordHash
 
-
 PASSWORD_HASH = PasswordHash.recommended()
 DUMMY_PASSWORD_HASH = PASSWORD_HASH.hash("Rajko dummy password used only for timing")
 COMMON_PASSWORDS = frozenset(
@@ -33,7 +32,9 @@ async def hash_password(password: str) -> str:
 
 
 async def verify_password(password: str, password_hash: str) -> tuple[bool, str | None]:
-    return await run_in_threadpool(PASSWORD_HASH.verify_and_update, password, password_hash)
+    return await run_in_threadpool(
+        PASSWORD_HASH.verify_and_update, password, password_hash
+    )
 
 
 def generate_secret() -> str:

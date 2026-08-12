@@ -20,15 +20,22 @@ def search_openings(query: str = "", limit: int = 30) -> list[dict]:
     words = query.casefold().split()
     matches = []
     for item in get_openings():
-        haystack = f'{item["eco"]} {item["name"]}'.casefold()
+        haystack = f"{item['eco']} {item['name']}".casefold()
         if all(word in haystack for word in words):
             matches.append(item)
     normalized = query.strip().casefold()
-    matches.sort(key=lambda item: (
-        0 if item["name"].casefold() == normalized else
-        1 if item["name"].casefold().startswith(normalized) else 2,
-        len(item["name"]), item["eco"], item["name"],
-    ))
+    matches.sort(
+        key=lambda item: (
+            0
+            if item["name"].casefold() == normalized
+            else 1
+            if item["name"].casefold().startswith(normalized)
+            else 2,
+            len(item["name"]),
+            item["eco"],
+            item["name"],
+        )
+    )
     return matches[:limit]
 
 
@@ -36,10 +43,14 @@ def resolve_opening(value: str) -> dict | None:
     normalized = value.strip().casefold()
     if not normalized:
         return None
-    exact = next((item for item in get_openings() if item["id"].casefold() == normalized), None)
+    exact = next(
+        (item for item in get_openings() if item["id"].casefold() == normalized), None
+    )
     if exact:
         return exact
-    exact = next((item for item in get_openings() if item["name"].casefold() == normalized), None)
+    exact = next(
+        (item for item in get_openings() if item["name"].casefold() == normalized), None
+    )
     if exact:
         return exact
     matches = search_openings(value, limit=2)

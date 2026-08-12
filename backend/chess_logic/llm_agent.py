@@ -1,7 +1,8 @@
-import os
 import json
-from openai import AsyncOpenAI
+import os
+
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 
 # Lokalny backend/.env jest przydatny w trybie developerskim, ale produkcyjne
 # zmienne z systemd EnvironmentFile muszą mieć pierwszeństwo.
@@ -24,9 +25,11 @@ AVAILABLE_MODELS = [
 ]
 AVAILABLE_MODEL_IDS = {model["id"] for model in AVAILABLE_MODELS}
 FALLBACK_MODEL = "google/gemini-3-flash-preview"
-BOT_COMMENTARY_MODEL = os.getenv("BOT_COMMENTARY_MODEL", "sao10k/l3-lunaris-8b")
-OPENROUTER_HTTP_REFERER = os.getenv("OPENROUTER_HTTP_REFERER", "http://localhost:5173")
-OPENROUTER_APP_TITLE = os.getenv("OPENROUTER_APP_TITLE", "Rajko Chess Analyser")
+BOT_COMMENTARY_MODEL = os.getenv("BOT_COMMENTARY_MODEL") or "sao10k/l3-lunaris-8b"
+OPENROUTER_HTTP_REFERER = (
+    os.getenv("OPENROUTER_HTTP_REFERER") or "http://localhost:5173"
+)
+OPENROUTER_APP_TITLE = os.getenv("OPENROUTER_APP_TITLE") or "Rajko Chess Analyser"
 
 
 def has_openrouter_api_key() -> bool:
@@ -35,7 +38,9 @@ def has_openrouter_api_key() -> bool:
 
 def get_default_model() -> str:
     configured_model = os.getenv("LLM_MODEL", FALLBACK_MODEL)
-    return configured_model if configured_model in AVAILABLE_MODEL_IDS else FALLBACK_MODEL
+    return (
+        configured_model if configured_model in AVAILABLE_MODEL_IDS else FALLBACK_MODEL
+    )
 
 
 async def generate_bot_move_commentary(
@@ -53,7 +58,11 @@ async def generate_bot_move_commentary(
     gracza i nie udawaj, że widzisz coś poza przekazanymi danymi.
     """
     context = {
-        "bot": {"name": bot["name"], "description": bot["description"], "style": bot["style"]},
+        "bot": {
+            "name": bot["name"],
+            "description": bot["description"],
+            "style": bot["style"],
+        },
         "important_moment": event,
         "current_fen": fen,
         "recent_moves_uci": move_history[-10:],
@@ -65,23 +74,26 @@ async def generate_bot_move_commentary(
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
             ],
-            extra_headers={"HTTP-Referer": OPENROUTER_HTTP_REFERER, "X-Title": OPENROUTER_APP_TITLE},
+            extra_headers={
+                "HTTP-Referer": OPENROUTER_HTTP_REFERER,
+                "X-Title": OPENROUTER_APP_TITLE,
+            },
             temperature=0.8,
             max_tokens=80,
         )
         content = (response.choices[0].message.content or "").strip().strip('"')
         return content[:300] or None
-    except Exception:
+    except Exception:  # noqa: BLE001 - optional LLM commentary degrades gracefully
         # Komentarz jest dodatkiem i jego awaria nie może przerwać partii.
         return None
 
 
 async def generate_chess_analysis(
-        fen: str,
-        lichess_data: dict,
-        stockfish_data: dict,
-        user_prompt: str = None,
-        model: str = None
+    fen: str,
+    lichess_data: dict,
+    stockfish_data: dict,
+    user_prompt: str | None = None,
+    model: str | None = None,
 ) -> str:
     """
     Wysyła zebrane dane do LLM przez OpenRouter i zwraca analizę szachową.
@@ -115,7 +127,11 @@ async def generate_chess_analysis(
     """
 
     # Opcjonalny prompt od użytkownika (jeśli wpisze coś w czacie)
-    final_user_prompt = user_prompt if user_prompt else "Przeanalizuj tę pozycję. Wskaż dysonans między ruchami ludzi a oceną silnika i wyjaśnij główne plany."
+    final_user_prompt = (
+        user_prompt
+        if user_prompt
+        else "Przeanalizuj tę pozycję. Wskaż dysonans między ruchami ludzi a oceną silnika i wyjaśnij główne plany."
+    )
 
     try:
         if not has_openrouter_api_key():
@@ -127,24 +143,30 @@ async def generate_chess_analysis(
             model=selected_model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}"}
+                {
+                    "role": "user",
+                    "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}",
+                },
             ],
             extra_headers={
                 "HTTP-Referer": OPENROUTER_HTTP_REFERER,
                 "X-Title": OPENROUTER_APP_TITLE,
-            }
+            },
         )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Wystąpił błąd komunikacji z OpenRouter: {str(e)}"
+        return (
+            response.choices[0].message.content
+            or "Model nie zwrócił treści odpowiedzi."
+        )
+    except Exception as e:  # noqa: BLE001 - convert provider failures to API text
+        return f"Wystąpił błąd komunikacji z OpenRouter: {e!s}"
 
 
 async def generate_game_analysis(
-        pgn: str,
-        engine_analysis: dict,
-        metadata: dict,
-        user_prompt: str = None,
-        model: str = None,
+    pgn: str,
+    engine_analysis: dict,
+    metadata: dict,
+    user_prompt: str | None = None,
+    model: str | None = None,
 ) -> str:
     system_prompt = """
     Jesteś wymagającym, ale przystępnym trenerem szachowym. Analizujesz zakończoną
@@ -173,7 +195,9 @@ async def generate_game_analysis(
     Krytyczne momenty według Stockfisha:
     {json.dumps(llm_engine_context, indent=2, ensure_ascii=False)}
     """
-    final_user_prompt = user_prompt or "Przeanalizuj całą partię i wskaż, nad czym powinienem pracować."
+    final_user_prompt = (
+        user_prompt or "Przeanalizuj całą partię i wskaż, nad czym powinienem pracować."
+    )
     selected_model = model or get_default_model()
 
     try:
@@ -184,19 +208,25 @@ async def generate_game_analysis(
             model=selected_model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}"},
+                {
+                    "role": "user",
+                    "content": f"{context}\n\nPolecenie użytkownika: {final_user_prompt}",
+                },
             ],
             extra_headers={
                 "HTTP-Referer": OPENROUTER_HTTP_REFERER,
                 "X-Title": OPENROUTER_APP_TITLE,
             },
         )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Wystąpił błąd komunikacji z OpenRouter: {str(e)}"
+        return (
+            response.choices[0].message.content
+            or "Model nie zwrócił treści odpowiedzi."
+        )
+    except Exception as e:  # noqa: BLE001 - convert provider failures to API text
+        return f"Wystąpił błąd komunikacji z OpenRouter: {e!s}"
 
 
-async def generate_bot_profile(description: str, model: str = None) -> dict:
+async def generate_bot_profile(description: str, model: str | None = None) -> dict:
     """Turns a natural-language persona into a validated bot-profile draft."""
     if not has_openrouter_api_key():
         raise ValueError("Brak OPENROUTER_API_KEY. Możesz utworzyć profil ręcznie.")
@@ -212,13 +242,24 @@ async def generate_bot_profile(description: str, model: str = None) -> dict:
     """
     response = await client.chat.completions.create(
         model=selected_model,
-        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": description[:2000]}],
-        extra_headers={"HTTP-Referer": OPENROUTER_HTTP_REFERER, "X-Title": OPENROUTER_APP_TITLE},
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": description[:2000]},
+        ],
+        extra_headers={
+            "HTTP-Referer": OPENROUTER_HTTP_REFERER,
+            "X-Title": OPENROUTER_APP_TITLE,
+        },
     )
-    content = response.choices[0].message.content.strip()
+    raw_content = response.choices[0].message.content
+    if not raw_content:
+        raise ValueError("Model nie zwrócił profilu bota.")
+    content = raw_content.strip()
     if content.startswith("```"):
         content = content.split("\n", 1)[1].rsplit("```", 1)[0]
     try:
         return json.loads(content)
     except json.JSONDecodeError as exc:
-        raise ValueError("Model nie zwrócił poprawnego profilu JSON. Spróbuj ponownie.") from exc
+        raise ValueError(
+            "Model nie zwrócił poprawnego profilu JSON. Spróbuj ponownie."
+        ) from exc

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { API_URL } from "../config";
-import type { BotDraft, BotProfile, BotStyleKey, OpeningSearchResult, PlayerColor } from "../types";
+import { useAuth } from "../auth/useAuth";
+import type { BotDraft, BotProfile, BotStyleKey, BotVisibility, OpeningSearchResult, PlayerColor } from "../types";
 
 const EMPTY: BotDraft = {
   name: "", description: "", avatar: "🤖", target_elo: 1400,
@@ -20,6 +21,7 @@ const apiError = (error: unknown, fallback: string) =>
   axios.isAxiosError<{ detail?: string }>(error) ? error.response?.data?.detail || fallback : fallback;
 
 export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorProps) {
+  const { user } = useAuth();
   const [description, setDescription] = useState("");
   const [draft, setDraft] = useState<BotDraft | null>(editingBot || null);
   const [loading, setLoading] = useState(false);
@@ -28,6 +30,7 @@ export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorP
   const [openingQuery, setOpeningQuery] = useState("");
   const [openingColor, setOpeningColor] = useState<PlayerColor>("white");
   const [openingResults, setOpeningResults] = useState<OpeningSearchResult[]>([]);
+  const [visibility, setVisibility] = useState<BotVisibility>(editingBot?.visibility || "private");
 
   useEffect(() => {
     if (openingQuery.trim().length < 2) return undefined;
@@ -52,8 +55,8 @@ export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorP
     setLoading(true); setError("");
     try {
       const res = editingBot
-        ? await axios.put<BotProfile>(`${API_URL}/bots/${editingBot.id}`, draft)
-        : await axios.post<BotProfile>(`${API_URL}/bots`, draft);
+        ? await axios.put<BotProfile>(`${API_URL}/bots/${editingBot.id}`, { ...draft, visibility })
+        : await axios.post<BotProfile>(`${API_URL}/bots`, { ...draft, visibility });
       onSaved(res.data);
     } catch (err) {
       setError(apiError(err, "Nie udało się zapisać bota."));
@@ -81,6 +84,8 @@ export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorP
           </div>
         </>}
         {draft && <div className="creator-form">
+          {!editingBot && user?.system_role === "admin" && <label>Widoczność<select value={visibility} onChange={e => setVisibility(e.target.value as BotVisibility)}><option value="private">Prywatny — tylko dla mnie</option><option value="public">Publiczny — dla wszystkich użytkowników</option></select></label>}
+          {editingBot && <p className={`bot-visibility-note ${editingBot.visibility}`}>{editingBot.visibility === "public" ? "Bot publiczny" : "Twój bot prywatny"}</p>}
           <div className="profile-row">
             <input className="avatar-input" value={draft.avatar} onChange={e => setDraft({ ...draft, avatar: e.target.value })} />
             <label>Nazwa<input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>

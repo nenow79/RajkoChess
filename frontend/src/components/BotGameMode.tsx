@@ -4,6 +4,7 @@ import { Chess, type PieceSymbol, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import { API_URL } from "../config";
 import BotCreator from "./BotCreator";
+import UserMenu from "./UserMenu";
 import type { AppMode, BotGame, BotProfile, PlayerColor, PlayerColorChoice } from "../types";
 
 interface BotGameModeProps {
@@ -185,14 +186,14 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
     <div className="app-container game-mode-container">
       <header className="app-header">
         <h1>♞ Rajko Chess</h1>
-        <div className="mode-switch"><button type="button" onClick={switchToAnalysis}>Analiza</button><button type="button" className="active">Gra z botem</button></div>
+        <div className="header-actions"><div className="mode-switch"><button type="button" onClick={switchToAnalysis}>Analiza</button><button type="button" className="active">Gra z botem</button></div><UserMenu /></div>
       </header>
       {!game ? <main className="bot-lobby">
         <div className="lobby-heading"><div><h2>Wybierz przeciwnika</h2><p>Każdy bot ma własną siłę, repertuar i sposób podejmowania ryzyka.</p></div><button className="create-bot-btn" onClick={() => setCreator({ mode: "create" })}>＋ Create bot</button></div>
         <div className="bot-grid">{bots.map(bot => <article key={bot.id} className={`bot-card ${selectedId === bot.id ? "selected" : ""}`} onClick={() => setSelectedId(bot.id)}>
-          <div className="bot-avatar">{bot.avatar}</div><div className="bot-card-title"><h3>{bot.name}</h3><strong>≈ {bot.target_elo} Elo</strong></div><p>{bot.description}</p>
+          <div className="bot-avatar">{bot.avatar}</div><div className="bot-card-title"><h3>{bot.name} <span className={`bot-visibility ${bot.visibility}`}>{bot.visibility === "public" ? "Publiczny" : "Prywatny"}</span></h3><strong>≈ {bot.target_elo} Elo</strong></div><p>{bot.description}</p>
           <div className="bot-style-summary"><span>Agresja {bot.style.aggression}</span><span>Taktyka {bot.style.tacticality}</span><span>Ryzyko {bot.style.risk}</span></div>
-          <div className="bot-card-actions"><button onClick={event => { event.stopPropagation(); setCreator({ mode: "edit", bot }); }}>Edytuj</button><button onClick={event => { event.stopPropagation(); removeBot(bot); }}>Usuń</button></div>
+          {(bot.can_edit || bot.can_delete) && <div className="bot-card-actions">{bot.can_edit && <button onClick={event => { event.stopPropagation(); setCreator({ mode: "edit", bot }); }}>Edytuj</button>}{bot.can_delete && <button onClick={event => { event.stopPropagation(); removeBot(bot); }}>Usuń</button>}</div>}
         </article>)}</div>
         {selectedBot && <section className="start-game-panel"><div><strong>Zagrasz przeciwko: {selectedBot.avatar} {selectedBot.name}</strong><span>Siła jest orientacyjna i zależy od pozycji.</span></div><label>Twój kolor<select value={playerColor} onChange={e => setPlayerColor(e.target.value as PlayerColorChoice)}><option value="random">Losowy</option><option value="white">Białe</option><option value="black">Czarne</option></select></label><label className="commentary-toggle"><input type="checkbox" role="switch" checked={llmCommentary} onChange={e => setLlmCommentary(e.target.checked)} /><span><strong>Komentarze LLM</strong><small>Tylko ważne momenty</small></span></label><button onClick={start} disabled={busy}>{busy ? "Bot przygotowuje ruch..." : "Rozpocznij partię"}</button></section>}
       </main> : <main className="bot-game-layout">

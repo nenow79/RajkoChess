@@ -1,44 +1,52 @@
 import os
+from io import StringIO
+
 import chess
 import chess.engine
 import chess.pgn
-from io import StringIO
 
 
 async def analyze_position(fen: str, time_limit: float = 0.5, multipv: int = 3) -> dict:
     stockfish_path = os.getenv("STOCKFISH_PATH")
 
     if not stockfish_path or not os.path.exists(stockfish_path):
-        raise FileNotFoundError(f"Nie znaleziono silnika pod ścieżką: {stockfish_path}. Sprawdź plik .env.")
+        raise FileNotFoundError(
+            f"Nie znaleziono silnika pod ścieżką: {stockfish_path}. Sprawdź plik .env."
+        )
 
     board = chess.Board(fen)
-    transport, engine = await chess.engine.popen_uci(stockfish_path)
+    _transport, engine = await chess.engine.popen_uci(stockfish_path)
 
     try:
         infos = await engine.analyse(
-            board,
-            chess.engine.Limit(time=time_limit),
-            multipv=multipv
+            board, chess.engine.Limit(time=time_limit), multipv=multipv
         )
 
         variations = []
         for info in infos:
-            score_obj = info["score"].white()
+            raw_score = info.get("score")
+            if raw_score is None:
+                continue
+            score_obj = raw_score.white()
             is_mate = score_obj.is_mate()
 
             if is_mate:
                 value = score_obj.mate()
                 eval_text = f"#{value}"
             else:
-                value = round(score_obj.score() / 100.0, 2)
+                centipawns = score_obj.score()
+                if centipawns is None:
+                    continue
+                value = round(centipawns / 100.0, 2)
                 eval_text = f"{value:.2f}"
 
             # Zmienne na najlepszy ruch
             best_move_uci = None
             best_move_san = None
 
-            if "pv" in info and info["pv"]:
-                best_move = info["pv"][0]
+            principal_variation = info.get("pv")
+            if principal_variation:
+                best_move = principal_variation[0]
                 best_move_uci = best_move.uci()
                 # Tłumaczenie pierwszego ruchu na SAN
                 best_move_san = board.san(best_move)
@@ -51,44 +59,47 @@ async def analyze_position(fen: str, time_limit: float = 0.5, multipv: int = 3) 
             # Nie chcemy modyfikować oryginalnej planszy 'board'
             temp_board = board.copy()
 
-            for move in info.get("pv", [])[:4]:
+            for move in (principal_variation or [])[:4]:
                 line_uci.append(move.uci())
                 # Generujemy SAN przed wykonaniem ruchu
                 line_san.append(temp_board.san(move))
                 # Wykonujemy ruch na kopii, aby kolejny ruch w pętli miał poprawny kontekst dla SAN
                 temp_board.push(move)
 
-            variations.append({
-                "is_mate": is_mate,
-                "score": value,
-                "evaluation": eval_text,
-                "best_move_uci": best_move_uci,
-                "best_move_san": best_move_san,  # Dodane: np. "Nf3"
-                "depth": info.get("depth", 0),
-                "line_uci": line_uci,
-                "line_san": line_san  # Dodane: np. ["Nf3", "d6", "Bc4", "Nf6"]
-            })
+            variations.append(
+                {
+                    "is_mate": is_mate,
+                    "score": value,
+                    "evaluation": eval_text,
+                    "best_move_uci": best_move_uci,
+                    "best_move_san": best_move_san,  # Dodane: np. "Nf3"
+                    "depth": info.get("depth", 0),
+                    "line_uci": line_uci,
+                    "line_san": line_san,  # Dodane: np. ["Nf3", "d6", "Bc4", "Nf6"]
+                }
+            )
 
-        return {
-            "fen": fen,
-            "variations": variations
-        }
+        return {"fen": fen, "variations": variations}
     finally:
         await engine.quit()
 
 
-async def analyze_game(pgn: str, time_limit: float = 0.15, critical_count: int = 8) -> dict:
+async def analyze_game(
+    pgn: str, time_limit: float = 0.15, critical_count: int = 8
+) -> dict:
     """Analyzes every played move and returns the largest evaluation losses."""
     stockfish_path = os.getenv("STOCKFISH_PATH")
     if not stockfish_path or not os.path.exists(stockfish_path):
-        raise FileNotFoundError(f"Nie znaleziono silnika pod ścieżką: {stockfish_path}. Sprawdź plik .env.")
+        raise FileNotFoundError(
+            f"Nie znaleziono silnika pod ścieżką: {stockfish_path}. Sprawdź plik .env."
+        )
 
     parsed_game = chess.pgn.read_game(StringIO(pgn))
     if parsed_game is None:
         raise ValueError("Nie udało się odczytać zapisu PGN")
 
     board = parsed_game.board()
-    transport, engine = await chess.engine.popen_uci(stockfish_path)
+    _transport, engine = await chess.engine.popen_uci(stockfish_path)
     moments = []
 
     try:
@@ -103,44 +114,61 @@ async def analyze_game(pgn: str, time_limit: float = 0.15, critical_count: int =
             best_line_san = _line_to_san(board, before_info.get("pv", [])[:4])
 
             board.push(move)
-            after_info = await engine.analyse(board, chess.engine.Limit(time=time_limit))
+            after_info = await engine.analyse(
+                board, chess.engine.Limit(time=time_limit)
+            )
             after_score = _score_for_white(after_info)
-            loss = before_score - after_score if mover == "white" else after_score - before_score
+            loss = (
+                before_score - after_score
+                if mover == "white"
+                else after_score - before_score
+            )
 
-            moments.append({
-                "ply": ply,
-                "move_number": (ply + 1) // 2,
-                "color": mover,
-                "played": played_san,
-                "best_move": best_move_san,
-                "best_line": best_line_san,
-                "evaluation_before": round(before_score, 2),
-                "evaluation_after": round(after_score, 2),
-                "loss": round(max(loss, 0), 2),
-                "fen_after": board.fen(),
-            })
+            moments.append(
+                {
+                    "ply": ply,
+                    "move_number": (ply + 1) // 2,
+                    "color": mover,
+                    "played": played_san,
+                    "best_move": best_move_san,
+                    "best_line": best_line_san,
+                    "evaluation_before": round(before_score, 2),
+                    "evaluation_after": round(after_score, 2),
+                    "loss": round(max(loss, 0), 2),
+                    "fen_after": board.fen(),
+                }
+            )
             before_info = after_info
             before_score = after_score
     finally:
         await engine.quit()
 
-    critical = sorted(moments, key=lambda item: item["loss"], reverse=True)[:critical_count]
-    evaluation_series = [{
-        "ply": 0,
-        "move_number": 0,
-        "move_label": "Pozycja startowa",
-        "evaluation": round(moments[0]["evaluation_before"], 2) if moments else round(before_score, 2),
-    }]
-    evaluation_series.extend({
-        "ply": moment["ply"],
-        "move_number": moment["move_number"],
-        "move_label": (
-            f'{moment["move_number"]}. {moment["played"]}'
-            if moment["color"] == "white"
-            else f'{moment["move_number"]}... {moment["played"]}'
-        ),
-        "evaluation": moment["evaluation_after"],
-    } for moment in moments)
+    critical = sorted(moments, key=lambda item: item["loss"], reverse=True)[
+        :critical_count
+    ]
+    evaluation_series = [
+        {
+            "ply": 0,
+            "move_number": 0,
+            "move_label": "Pozycja startowa",
+            "evaluation": round(moments[0]["evaluation_before"], 2)
+            if moments
+            else round(before_score, 2),
+        }
+    ]
+    evaluation_series.extend(
+        {
+            "ply": moment["ply"],
+            "move_number": moment["move_number"],
+            "move_label": (
+                f"{moment['move_number']}. {moment['played']}"
+                if moment["color"] == "white"
+                else f"{moment['move_number']}... {moment['played']}"
+            ),
+            "evaluation": moment["evaluation_after"],
+        }
+        for moment in moments
+    )
 
     return {
         "headers": dict(parsed_game.headers),
@@ -151,8 +179,14 @@ async def analyze_game(pgn: str, time_limit: float = 0.15, critical_count: int =
     }
 
 
-def _score_for_white(info: dict) -> float:
-    return info["score"].white().score(mate_score=100000) / 100.0
+def _score_for_white(info: chess.engine.InfoDict) -> float:
+    score = info.get("score")
+    if score is None:
+        raise ValueError("Stockfish nie zwrócił oceny pozycji")
+    centipawns = score.white().score(mate_score=100000)
+    if centipawns is None:
+        raise ValueError("Stockfish zwrócił pustą ocenę pozycji")
+    return centipawns / 100.0
 
 
 def _line_to_san(board: chess.Board, moves: list[chess.Move]) -> list[str]:

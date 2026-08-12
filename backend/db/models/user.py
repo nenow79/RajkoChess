@@ -13,6 +13,8 @@ from db.models.enums import SystemRole, UserStatus, enum_values
 if TYPE_CHECKING:
     from db.models.auth_session import AuthSession
     from db.models.auth_token import AuthToken
+    from db.models.bot import Bot
+    from db.models.entitlement import Entitlement
     from db.models.identity import Identity
 
 
@@ -57,5 +59,11 @@ class User(UuidPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
     auth_tokens: Mapped[list[AuthToken]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    bots: Mapped[list[Bot]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan", passive_deletes=True
+    )
+    entitlements: Mapped[list[Entitlement]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
