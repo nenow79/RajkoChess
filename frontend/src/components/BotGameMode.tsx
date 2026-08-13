@@ -6,6 +6,7 @@ import { API_URL } from "../config";
 import BotCreator from "./BotCreator";
 import UserMenu from "./UserMenu";
 import type { AppMode, BotGame, BotProfile, PlayerColor, PlayerColorChoice } from "../types";
+import { getMyPlan, type PlanSummary } from "../admin/api";
 
 interface BotGameModeProps {
   onModeChange: (mode: AppMode) => void;
@@ -36,6 +37,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
   const [boardOrientation, setBoardOrientation] = useState<PlayerColor | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null);
   const [llmCommentary, setLlmCommentary] = useState(false);
+  const [plan, setPlan] = useState<PlanSummary | null>(null);
 
   const loadBots = () => axios.get<{ bots: BotProfile[] }>(`${API_URL}/bots`).then(res => {
     setBots(res.data.bots);
@@ -43,6 +45,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
   });
 
   useEffect(() => {
+    getMyPlan().then(setPlan).catch(() => setPlan(null));
     loadBots().catch(() => setError("Nie udało się pobrać botów."));
     axios.get<BotGame & { status: string }>(`${API_URL}/bot-games/current`).then(res => {
       if (res.data.status !== "none") setGame(res.data);
@@ -195,7 +198,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
           <div className="bot-style-summary"><span>Agresja {bot.style.aggression}</span><span>Taktyka {bot.style.tacticality}</span><span>Ryzyko {bot.style.risk}</span></div>
           {(bot.can_edit || bot.can_delete) && <div className="bot-card-actions">{bot.can_edit && <button onClick={event => { event.stopPropagation(); setCreator({ mode: "edit", bot }); }}>Edytuj</button>}{bot.can_delete && <button onClick={event => { event.stopPropagation(); removeBot(bot); }}>Usuń</button>}</div>}
         </article>)}</div>
-        {selectedBot && <section className="start-game-panel"><div><strong>Zagrasz przeciwko: {selectedBot.avatar} {selectedBot.name}</strong><span>Siła jest orientacyjna i zależy od pozycji.</span></div><label>Twój kolor<select value={playerColor} onChange={e => setPlayerColor(e.target.value as PlayerColorChoice)}><option value="random">Losowy</option><option value="white">Białe</option><option value="black">Czarne</option></select></label><label className="commentary-toggle"><input type="checkbox" role="switch" checked={llmCommentary} onChange={e => setLlmCommentary(e.target.checked)} /><span><strong>Komentarze LLM</strong><small>Tylko ważne momenty</small></span></label><button onClick={start} disabled={busy}>{busy ? "Bot przygotowuje ruch..." : "Rozpocznij partię"}</button></section>}
+        {selectedBot && <section className="start-game-panel"><div><strong>Zagrasz przeciwko: {selectedBot.avatar} {selectedBot.name}</strong><span>Siła jest orientacyjna i zależy od pozycji.</span></div><label>Twój kolor<select value={playerColor} onChange={e => setPlayerColor(e.target.value as PlayerColorChoice)}><option value="random">Losowy</option><option value="white">Białe</option><option value="black">Czarne</option></select></label><label className="commentary-toggle"><input type="checkbox" role="switch" checked={llmCommentary} disabled={plan?.base_plan !== "premium" && plan?.key !== "admin"} onChange={e => setLlmCommentary(e.target.checked)} /><span><strong>Komentarze LLM</strong><small>{plan?.base_plan === "premium" || plan?.key === "admin" ? "Tylko ważne momenty" : "Funkcja Premium"}</small></span></label><button onClick={start} disabled={busy}>{busy ? "Bot przygotowuje ruch..." : "Rozpocznij partię"}</button></section>}
       </main> : <main className="bot-game-layout">
         <section className="bot-board-column">
           <div className="bot-game-status"><div className="bot-avatar small">{game.bot.avatar}</div><div><strong>{game.bot.name} · ≈ {game.bot.target_elo} Elo</strong><span>{game.status === "active" ? (busy ? "Bot myśli..." : isPlayerTurn ? "Twój ruch" : "Ruch bota") : `Koniec partii · ${game.result}`}</span></div></div>

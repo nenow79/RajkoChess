@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from db.models import SystemRole
@@ -33,6 +34,17 @@ class EntitlementUpdate(AdminReason):
     limit_value: int | None = Field(default=None, ge=0)
 
 
+class PremiumGrantRequest(AdminReason):
+    days: int | None = Field(default=None, ge=1, le=366)
+    ends_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def has_exactly_one_expiry(self) -> "PremiumGrantRequest":
+        if (self.days is None) == (self.ends_at is None):
+            raise ValueError("Podaj days albo ends_at")
+        return self
+
+
 class AdminBotInspect(AdminReason):
     pass
 
@@ -45,3 +57,5 @@ class AdminUserResponse(BaseModel):
     system_role: str
     email_verified: bool
     created_at: str
+    plan_key: Literal["free", "premium"] = "free"
+    premium_expires_at: str | None = None

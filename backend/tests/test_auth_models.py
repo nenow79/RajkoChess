@@ -11,9 +11,11 @@ from db.models import (
     BotVisibility,
     Entitlement,
     Identity,
+    PlanGrant,
     SystemRole,
     User,
     UserStatus,
+    UsageEvent,
 )
 from sqlalchemy import CheckConstraint, Enum, LargeBinary, Table, inspect
 
@@ -30,6 +32,8 @@ class AuthModelMetadataTests(unittest.TestCase):
                 "bots",
                 "entitlements",
                 "audit_log",
+                "plan_grants",
+                "usage_events",
             },
         )
 
@@ -104,6 +108,19 @@ class AuthModelMetadataTests(unittest.TestCase):
         self.assertIn("uq_entitlements_user_key", entitlement_constraints)
         self.assertNotIn("updated_at", AuditLog.__table__.columns)
         self.assertIn("created_at", AuditLog.__table__.columns)
+
+        plan_checks = {
+            constraint.name
+            for constraint in cast(Table, PlanGrant.__table__).constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        usage_checks = {
+            constraint.name
+            for constraint in cast(Table, UsageEvent.__table__).constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        self.assertIn("ck_plan_grants_ends_after_start", plan_checks)
+        self.assertIn("ck_usage_events_quantity_positive", usage_checks)
 
 
 if __name__ == "__main__":

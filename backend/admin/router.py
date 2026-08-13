@@ -1,28 +1,44 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from auth.audit import write_audit
 from auth.dependencies import CurrentAuth, require_admin, require_admin_write
+from auth.plans import effective_plan, plan_summary
 from auth.policies import ENTITLEMENT_DEFINITIONS, all_effective_entitlements
 from chess_logic.bot_catalog import bot_response
-from db.models import AuditLog, AuthSession, Bot, Entitlement, User, UserStatus
+from db.models import (
+    AuditLog,
+    AuthSession,
+    Bot,
+    Entitlement,
+    PlanGrant,
+    User,
+    UserStatus,
+)
 from db.session import get_db_session
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from admin.schemas import (
+    AdminReason,
     AdminBotInspect,
     AdminUserResponse,
     AdminUserUpdate,
     EntitlementUpdate,
+    PremiumGrantRequest,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["Administration"])
 
 
-def user_response(user: User) -> AdminUserResponse:
+def user_response(
+    user: User,
+    *,
+    plan_key: Literal["free", "premium"] = "free",
+    premium_expires_at: datetime | None = None,
+) -> AdminUserResponse:
     return AdminUserResponse(
         id=user.id,
         email=user.email,
@@ -31,6 +47,10 @@ def user_response(user: User) -> AdminUserResponse:
         system_role=user.system_role.value,
         email_verified=user.email_verified_at is not None,
         created_at=user.created_at.isoformat(),
+        plan_key=plan_key,
+        premium_expires_at=premium_expires_at.isoformat()
+        if premium_expires_at
+        else None,
     )
 
 
@@ -46,7 +66,121 @@ async def list_users(
             select(User).order_by(User.created_at, User.id).offset(offset).limit(limit)
         )
     ).all()
-    return [user_response(user) for user in users]
+    responses = []
+    for user in users:
+        plan = await effective_plan(db, user=user)
+        responses.append(
+            user_response(
+                user, plan_key=plan.key, premium_expires_at=plan.expires_at
+            )
+        )
+    return responses
+
+
+@router.get("/users/{user_id}/plan")
+async def get_user_plan(
+    user_id: uuid.UUID,
+    current: Annotated[CurrentAuth, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono użytkownika")
+    return {"user_id": str(target.id), **await plan_summary(db, user=target)}
+
+
+@router.post("/users/{user_id}/premium")
+async def grant_premium(
+    user_id: uuid.UUID,
+    payload: PremiumGrantRequest,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono użytkownika")
+
+    now = datetime.now(timezone.utc)
+    active = await effective_plan(db, user=target, now=now)
+    starts_at = now
+    if payload.days is not None:
+        from datetime import timedelta
+
+        base = active.expires_at if active.expires_at and active.expires_at > now else now
+        ends_at = base + timedelta(days=payload.days)
+    else:
+        ends_at = payload.ends_at
+        if ends_at is None:
+            raise HTTPException(status_code=400, detail="Brak daty zakończenia")
+        if ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+        if ends_at <= now:
+            raise HTTPException(status_code=400, detail="Data zakończenia musi być przyszła")
+
+    grant = PlanGrant(
+        user_id=target.id,
+        plan_key="premium",
+        starts_at=starts_at,
+        ends_at=ends_at,
+        source="manual",
+        granted_by_user_id=current.user.id,
+        reason=payload.reason,
+    )
+    db.add(grant)
+    await db.flush()
+    await write_audit(
+        db,
+        current=current,
+        action="plan.premium_granted",
+        resource_type="plan_grant",
+        resource_id=str(grant.id),
+        reason=payload.reason,
+        details={
+            "user_id": str(target.id),
+            "starts_at": starts_at.isoformat(),
+            "ends_at": ends_at.isoformat(),
+        },
+    )
+    await db.commit()
+    return {"user_id": str(target.id), **await plan_summary(db, user=target)}
+
+
+@router.delete("/users/{user_id}/premium")
+async def revoke_premium(
+    user_id: uuid.UUID,
+    payload: AdminReason,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono użytkownika")
+    now = datetime.now(timezone.utc)
+    grants = (
+        await db.scalars(
+            select(PlanGrant).where(
+                PlanGrant.user_id == target.id,
+                PlanGrant.starts_at <= now,
+                PlanGrant.ends_at > now,
+                PlanGrant.revoked_at.is_(None),
+            )
+        )
+    ).all()
+    if not grants:
+        raise HTTPException(status_code=409, detail="Użytkownik nie ma aktywnego Premium")
+    for grant in grants:
+        grant.revoked_at = now
+    await write_audit(
+        db,
+        current=current,
+        action="plan.premium_revoked",
+        resource_type="user",
+        resource_id=str(target.id),
+        reason=payload.reason,
+        details={"grant_ids": [str(grant.id) for grant in grants]},
+    )
+    await db.commit()
+    return {"user_id": str(target.id), **await plan_summary(db, user=target)}
 
 
 @router.patch("/users/{user_id}", response_model=AdminUserResponse)

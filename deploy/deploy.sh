@@ -9,7 +9,7 @@ VENV_DIR="$PROJECT_DIR/.venv"
 
 SERVICE_NAME="${SERVICE_NAME:-rajko-chess-backend.service}"
 WEB_ROOT="${WEB_ROOT:-/var/www/rajko-chess/chess}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8000/api/position}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8000/api/health}"
 PULL_CHANGES=1
 
 usage() {
@@ -67,6 +67,12 @@ fi
 "$VENV_DIR/bin/python" -m pip install -r "$PROJECT_DIR/backend/requirements.txt"
 "$VENV_DIR/bin/python" -m compileall -q "$PROJECT_DIR/backend"
 
+log "Aktualizacja schematu PostgreSQL"
+(
+  cd "$PROJECT_DIR/backend"
+  "$VENV_DIR/bin/alembic" upgrade head
+)
+
 log "Instalacja zależności i budowanie frontendu"
 npm --prefix "$FRONTEND_DIR" ci
 npm --prefix "$FRONTEND_DIR" run build
@@ -99,4 +105,3 @@ sudo systemctl reload nginx
 
 log "Wdrożenie zakończone pomyślnie"
 git log -1 --oneline
-

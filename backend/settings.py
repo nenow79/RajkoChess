@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     email_verification_hours: int = Field(
         default=24, gt=0, le=168, validation_alias="EMAIL_VERIFICATION_HOURS"
     )
+    password_reset_minutes: int = Field(
+        default=60, gt=0, le=1440, validation_alias="PASSWORD_RESET_MINUTES"
+    )
+    redis_url: str = Field(
+        default="redis://127.0.0.1:6379/0", validation_alias="REDIS_URL"
+    )
+    rate_limit_key_secret: SecretStr = Field(
+        default=SecretStr("local-development-rate-limit-secret"),
+        validation_alias="RATE_LIMIT_KEY_SECRET",
+    )
 
     @model_validator(mode="after")
     def validate_auth_cookie_settings(self) -> "Settings":
@@ -72,6 +82,13 @@ class Settings(BaseSettings):
         if uses_host_prefix and not self.auth_cookie_secure:
             raise ValueError(
                 "Cookie z prefiksem __Host- wymaga AUTH_COOKIE_SECURE=true"
+            )
+        rate_secret = self.rate_limit_key_secret.get_secret_value()
+        if len(rate_secret) < 32:
+            raise ValueError("RATE_LIMIT_KEY_SECRET musi mieć co najmniej 32 znaki")
+        if self.auth_cookie_secure and rate_secret == "local-development-rate-limit-secret":
+            raise ValueError(
+                "Produkcja wymaga własnego losowego RATE_LIMIT_KEY_SECRET"
             )
         self.public_app_url = self.public_app_url.rstrip("/")
         return self

@@ -12,7 +12,7 @@ Aplikacja webowa do analizy szachowej i gry ze spersonalizowanymi botami. Fronte
 - czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha,
 - osobny tryb gry ze spersonalizowanymi botami o regulowanej sile, stylu i repertuarze,
 - opcjonalne komentarze LLM botów przy najważniejszych momentach partii,
-- kreator botów wspierany przez LLM oraz trwały katalog profili w SQLite,
+- kreator botów wspierany przez LLM oraz trwały katalog profili w PostgreSQL,
 - lokalny katalog 3790 linii debiutowych z projektu `lichess-org/chess-openings`,
 - przekazanie zakończonej partii z botem bezpośrednio do trybu analizy.
 
@@ -40,6 +40,7 @@ Przycisk `Create bot` pozwala opisać bota naturalnym językiem. RajkoAI przygot
 - Python 3.11+,
 - Node.js 20+ i npm,
 - Stockfish zainstalowany lokalnie,
+- PostgreSQL i Redis,
 - klucz OpenRouter API, jeśli chcesz używać panelu LLM lub automatycznego kreatora botów.
 
 ## Konfiguracja
@@ -141,6 +142,9 @@ SMTP_PASSWORD=uzupelnij-wylacznie-w-sekretnym-pliku-env
 SMTP_FROM_EMAIL=noreply@rajko.pl
 SMTP_FROM_NAME=Rajko Chess
 EMAIL_VERIFICATION_HOURS=24
+PASSWORD_RESET_MINUTES=60
+REDIS_URL=redis://127.0.0.1:6379/0
+RATE_LIMIT_KEY_SECRET=ustaw-długi-losowy-sekret
 ```
 
 Nie wpisuj hasła SMTP do repozytorium. Nowe konto nie może się zalogować przed
@@ -150,6 +154,29 @@ Odpowiedź tego endpointu jest jednakowa niezależnie od tego, czy konto istniej
 
 Migracja `20260812_0004` oznacza konta istniejące przed wdrożeniem jako
 zweryfikowane, dzięki czemu aktualni użytkownicy nie tracą dostępu.
+
+### Reset hasła
+
+Na ekranie logowania wybierz „Nie pamiętasz hasła?” i podaj adres e-mail.
+Odpowiedź jest jednakowa niezależnie od tego, czy aktywne i zweryfikowane konto
+istnieje. Jeśli konto kwalifikuje się do resetu, backend wysyła przez SMTP
+jednorazowy link do ekranu `/reset-password`.
+
+Token jest przechowywany wyłącznie jako hash i domyślnie wygasa po 60 minutach.
+Udane ustawienie nowego hasła zużywa wszystkie aktywne tokeny resetu danego
+użytkownika oraz unieważnia wszystkie jego sesje. Nowe hasło podlega tym samym
+regułom co podczas rejestracji: ma od 10 do 128 znaków i nie może znajdować się
+na lokalnej liście najczęściej używanych haseł. Czas ważności można ustawić
+zmienną `PASSWORD_RESET_MINUTES` w zakresie od 1 do 1440 minut.
+
+Do ręcznego testu pełnego przepływu:
+
+1. Na ekranie logowania wybierz „Nie pamiętasz hasła?”.
+2. Podaj adres istniejącego, zweryfikowanego konta.
+3. Otwórz dostarczony link i ustaw nowe hasło.
+4. Sprawdź, że stare hasło nie działa, a nowe pozwala się zalogować.
+5. Jeśli konto miało sesję w innej przeglądarce, sprawdź, że została
+   unieważniona.
 
 ### Nadanie pierwszej roli administratora
 
@@ -191,6 +218,55 @@ Uprawnienia produktowe są niezależne od nazw planów. Początkowy rejestr obej
 `basic_analysis`, `ai_game_review`, `custom_bot`, `training_plan` i
 `priority_analysis`. Administrator omija ograniczenia produktowe, ale nadal
 podlega kontrolom sesji, CSRF i audytowi.
+
+### Free, Premium i limity bety
+
+Każdy użytkownik bez aktywnego grantu Premium korzysta automatycznie z Free.
+Administrator może w panelu „Administracja” przyznać Premium na wybraną liczbę
+dni, przedłużyć aktywny okres albo go odwołać. Po terminie konto automatycznie
+wraca do Free. Wszystkie te operacje wymagają powodu i trafiają do `audit_log`.
+
+| Funkcja | Free | Premium |
+|---|---:|---:|
+| Pełna analiza partii AI | 3/miesiąc | 30/miesiąc |
+| Pytania do trenera AI | 10/miesiąc | 100/miesiąc |
+| Generowanie bota przez AI | 1/miesiąc | 10/miesiąc |
+| Własne prywatne boty | 1 łącznie | 10 łącznie |
+| Komentarze AI podczas gry | wyłączone | 100/miesiąc |
+
+Zużycie jest zapisywane w PostgreSQL w `usage_events` i odnawia się pierwszego
+dnia miesiąca według UTC. Administrator omija miesięczne limity produktu, ale
+nadal podlega limitom bezpieczeństwa i blokadom współbieżności.
+Liczniki Free i Premium są rozdzielone: przejście na Premium udostępnia pełny
+limit Premium, a późniejszy powrót do Free przywraca wcześniejsze zużycie Free z
+tego samego miesiąca.
+
+### Redis i rate limiting
+
+Redis przechowuje wyłącznie krótkotrwałe liczniki i blokady współbieżności. Nie
+przechowuje haseł, sesji ani treści partii. Na Ubuntu lub Linux Mint zainstaluj:
+
+```bash
+sudo apt update
+sudo apt install redis-server
+sudo systemctl enable --now redis-server
+redis-cli ping
+```
+
+Ostatnia komenda powinna zwrócić `PONG`. Redis powinien nasłuchiwać wyłącznie na
+`127.0.0.1`; nie otwieraj portu 6379 w firewallu ani routerze. Połączenie
+aplikacji można sprawdzić poleceniem:
+
+```bash
+cd backend
+../.venv/bin/python -m scripts.check_redis
+```
+
+Backend ogranicza próby logowania, rejestracji, ponownej weryfikacji i resetu
+hasła per IP oraz per konto. Stockfish i LLM mają limity per użytkownik oraz
+rozproszoną blokadę jednej równoległej operacji. Odpowiedź `429` zawiera
+`Retry-After`. Przy awarii Redis logowanie pozostaje chronione przez nginx,
+natomiast rejestracja, poczta oraz kosztowne operacje zwracają bezpieczne `503`.
 
 ## Szybkie uruchomienie
 
@@ -295,7 +371,11 @@ sudo mkdir -p /etc/rajko-chess
 sudo cp deploy/backend.env.example /etc/rajko-chess/backend.env
 ```
 
-Uzupełnij `/etc/rajko-chess/backend.env`, szczególnie `STOCKFISH_PATH` oraz opcjonalnie `OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`. Profile botów są przechowywane w SQLite. Przykładowa usługa systemd tworzy trwały katalog `/var/lib/rajko-chess`, zgodny z `BOT_DB_PATH` z pliku przykładowego. Bazę warto dołączyć do regularnych kopii zapasowych.
+Uzupełnij `/etc/rajko-chess/backend.env`, szczególnie `STOCKFISH_PATH`,
+`POSTGRES_*`, `REDIS_URL` i `RATE_LIMIT_KEY_SECRET` oraz opcjonalnie
+`OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`. Profile botów, plany oraz zdarzenia
+użycia są przechowywane w PostgreSQL. Redis obsługuje tylko krótkotrwałe
+liczniki i blokady.
 Jeśli używasz LLM, ustaw też `OPENROUTER_HTTP_REFERER` na publiczny adres aplikacji, np. `https://rajko.pl/chess/`.
 
 Przykładowe pliki produkcyjne są w:
@@ -347,7 +427,7 @@ sudo systemctl reload nginx
 ```text
 backend/              FastAPI, logika gry, boty i integracje z usługami
 backend/chess_logic/  Stockfish, partie, profile botów, Lichess i OpenRouter
-backend/data/         wersjonowany katalog otwarć i lokalna baza SQLite
+backend/data/         wersjonowany katalog otwarć
 backend/tests/        testy profili i przebiegu gry z botem
 frontend/             React + Vite oraz ekrany analizy i gry
 deploy/               przykładowa konfiguracja nginx i systemd

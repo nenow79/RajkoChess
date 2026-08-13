@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from auth.cookies import clear_auth_cookies, set_auth_cookies
 from auth.dependencies import CurrentAuth
-from auth.schemas import RegisterRequest
+from auth.schemas import PasswordResetConfirmRequest, RegisterRequest
 from auth.security import PASSWORD_HASH, generate_secret, hash_secret
 from fastapi import Response
 from main import app, get_session_id
@@ -43,6 +43,13 @@ class AuthSchemaTests(unittest.TestCase):
         accepted = RegisterRequest(email="test@example.com", password="10znakow!!")
         self.assertEqual(accepted.password, "10znakow!!")
 
+        with self.assertRaises(ValidationError):
+            PasswordResetConfirmRequest(token="x" * 32, password="passwordpassword")
+        reset = PasswordResetConfirmRequest(
+            token="x" * 32, password="nowe-bezpieczne-haslo"
+        )
+        self.assertEqual(reset.password, "nowe-bezpieczne-haslo")
+
     def test_auth_routes_are_exposed_in_openapi(self):
         paths = app.openapi()["paths"]
         self.assertIn("/api/auth/register", paths)
@@ -51,6 +58,8 @@ class AuthSchemaTests(unittest.TestCase):
         self.assertIn("/api/auth/logout", paths)
         self.assertIn("/api/auth/email-verification/confirm", paths)
         self.assertIn("/api/auth/email-verification/resend", paths)
+        self.assertIn("/api/auth/password-reset/request", paths)
+        self.assertIn("/api/auth/password-reset/confirm", paths)
         logout_parameters = paths["/api/auth/logout"]["post"]["parameters"]
         self.assertTrue(
             any(parameter["name"] == "X-CSRF-Token" for parameter in logout_parameters)
@@ -73,6 +82,29 @@ class AuthSchemaTests(unittest.TestCase):
                 )
             )
             self.assertIn({"SessionCookie": []}, operation.get("security", []))
+
+    def test_game_state_mutations_require_csrf(self):
+        paths = app.openapi()["paths"]
+        for path in (
+            "/api/move",
+            "/api/undo",
+            "/api/reset",
+            "/api/import-game",
+            "/api/imported-game/position",
+            "/api/analyze-game",
+            "/api/chat",
+            "/api/cancel-analysis",
+            "/api/bot-games/start",
+            "/api/bot-games/move",
+            "/api/bot-games/resign",
+            "/api/bot-games/draw-offer",
+            "/api/bot-games/to-analysis",
+            "/api/bots/draft",
+        ):
+            parameters = paths[path]["post"].get("parameters", [])
+            self.assertTrue(
+                any(item["name"] == "X-CSRF-Token" for item in parameters), path
+            )
 
     def test_game_state_key_comes_from_database_session_id(self):
         database_session_id = uuid.uuid4()

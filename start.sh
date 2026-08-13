@@ -35,6 +35,12 @@ trap cleanup INT TERM EXIT
 
 require_command python3
 require_command npm
+require_command redis-cli
+
+if ! redis-cli -u "${REDIS_URL:-redis://127.0.0.1:6379/0}" ping 2>/dev/null | grep -qx PONG; then
+  echo "Redis nie odpowiada. Uruchom usługę: sudo systemctl enable --now redis-server"
+  exit 1
+fi
 
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 if [[ -z "$LAN_IP" ]]; then

@@ -38,6 +38,14 @@ export const resendVerificationEmail = (email: string) =>
   authApi.post<{ message: string }>("/email-verification/resend", { email })
     .then((response) => response.data);
 
+export const requestPasswordReset = (email: string) =>
+  authApi.post<{ message: string }>("/password-reset/request", { email })
+    .then((response) => response.data);
+
+export const confirmPasswordReset = (token: string, password: string) =>
+  authApi.post<{ message: string }>("/password-reset/confirm", { token, password })
+    .then((response) => response.data);
+
 export const getCsrfToken = () =>
   authApi.get<CsrfResponse>("/csrf").then((response) => response.data.csrf_token);
 

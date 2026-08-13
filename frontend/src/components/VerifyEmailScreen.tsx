@@ -36,7 +36,7 @@ export default function VerifyEmailScreen() {
         <p className="auth-eyebrow">RAJKO CHESS</p>
         <h1>{state === "success" ? "E-mail potwierdzony" : state === "error" ? "Nie udało się potwierdzić" : "Chwila…"}</h1>
         <p className={state === "error" ? "auth-error" : "auth-intro"}>{message}</p>
-        {state !== "verifying" && <a className="auth-submit auth-link" href="/">Przejdź do logowania</a>}
+        {state !== "verifying" && <a className="auth-submit auth-link" href="./">Przejdź do logowania</a>}
       </section>
     </main>
   );

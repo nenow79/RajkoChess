@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_URL } from "../config";
 import type { GameAnalysis, ImportedGame, LlmModel } from "../types";
+import { getAuthErrorMessage } from "../auth/api";
 
 const MODEL_STORAGE_KEY = "rajko-selected-model";
 interface ChatMessage {
@@ -87,7 +88,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
     } catch (err) {
       if (axios.isCancel(err)) return;
       console.error("Błąd czatu:", err);
-      setMessages(prev => [...prev, { role: "bot", text: "❌ Błąd połączenia z Agentem LLM. Upewnij się, że klucz API w pliku .env jest poprawny." }]);
+      setMessages(prev => [...prev, { role: "bot", text: `❌ ${getAuthErrorMessage(err, "Nie udało się uzyskać odpowiedzi trenera AI.")}` }]);
     } finally {
       if (analysisControllerRef.current === controller) {
         analysisControllerRef.current = null;
@@ -121,7 +122,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
       console.error("Błąd analizy partii:", err);
       setMessages(prev => [...prev, {
         role: "bot",
-        text: "Nie udało się przeanalizować całej partii. Sprawdź backend, Stockfisha i konfigurację LLM.",
+        text: getAuthErrorMessage(err, "Nie udało się przeanalizować całej partii."),
       }]);
     } finally {
       if (analysisControllerRef.current === controller) {

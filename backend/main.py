@@ -6,6 +6,12 @@ from admin.router import router as admin_router
 from auth.audit import write_audit
 from auth.dependencies import CurrentAuth, get_current_auth, require_csrf
 from auth.policies import require_entitlement
+from auth.limits import (
+    ensure_custom_bot_capacity,
+    ensure_monthly_available,
+    limited_operation,
+)
+from auth.plans import record_usage
 from auth.router import router as auth_router
 from chess_logic.bot_catalog import (
     BotNotFoundError,
@@ -44,8 +50,9 @@ from db.session import get_db_session
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware  # Dodany import
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from rate_limit import redis_healthcheck
 
 # Ładowanie zmiennych środowiskowych z .env
 load_dotenv()
@@ -56,12 +63,12 @@ app.include_router(admin_router)
 
 
 class ChatRequest(BaseModel):
-    message: str = ""
+    message: str = Field(default="", max_length=4000)
     model: str | None = None
 
 
 class ImportGameRequest(BaseModel):
-    pgn: str
+    pgn: str = Field(min_length=1, max_length=2_000_000)
     metadata: dict | None = None
 
 
@@ -70,17 +77,17 @@ class GamePositionRequest(BaseModel):
 
 
 class BotStartRequest(BaseModel):
-    bot_id: str
+    bot_id: str = Field(min_length=1, max_length=64)
     player_color: str = "random"
     llm_commentary: bool = False
 
 
 class BotMoveRequest(BaseModel):
-    uci: str
+    uci: str = Field(min_length=4, max_length=5)
 
 
 class BotDraftRequest(BaseModel):
-    description: str
+    description: str = Field(min_length=1, max_length=1000)
     model: str | None = None
 
 
@@ -96,6 +103,11 @@ app.add_middleware(
 games: dict[str, ChessGame] = {}
 active_analysis_tasks: dict[str, asyncio.Task] = {}
 bot_games = BotGameManager()
+
+
+@app.get("/api/health", include_in_schema=False)
+async def healthcheck():
+    return {"status": "ok", "redis": "ok" if await redis_healthcheck() else "down"}
 
 
 def get_session_id(current: CurrentAuth = Depends(get_current_auth)) -> str:
@@ -125,6 +137,7 @@ async def create_bot(
     db: AsyncSession = Depends(get_db_session),
 ):
     try:
+        await ensure_custom_bot_capacity(db, user=current.user)
         visibility = parse_visibility(
             profile.get("visibility"), default=BotVisibility.PRIVATE
         )
@@ -216,14 +229,22 @@ async def opening_search(q: str = "", limit: int = 30):
 @app.post("/api/bots/draft")
 async def draft_bot(
     request: BotDraftRequest,
-    current: CurrentAuth = Depends(get_current_auth),
+    current: CurrentAuth = Depends(require_csrf),
+    db: AsyncSession = Depends(get_db_session),
 ):
     if not request.description.strip():
         raise HTTPException(status_code=400, detail="Opisz charakter bota")
     if request.model and request.model not in AVAILABLE_MODEL_IDS:
         raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
     try:
-        draft = await generate_bot_profile(request.description, request.model)
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="ai_bot_draft",
+            monthly_key="ai_bot_draft",
+            concurrency_group="llm",
+        ):
+            draft = await generate_bot_profile(request.description, request.model)
         warnings = []
         openings = []
         for color, queries in (draft.pop("opening_queries", {}) or {}).items():
@@ -246,6 +267,8 @@ async def draft_bot(
         return {"draft": clean, "warnings": warnings}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001 - normalize external provider failures
         raise HTTPException(
             status_code=502, detail=f"Nie udało się utworzyć profilu: {exc}"
@@ -256,24 +279,35 @@ async def draft_bot(
 async def start_bot_game(
     request: BotStartRequest,
     session_id: str = Depends(get_session_id),
-    current: CurrentAuth = Depends(get_current_auth),
+    current: CurrentAuth = Depends(require_csrf),
     db: AsyncSession = Depends(get_db_session),
 ):
     if request.player_color not in ("white", "black", "random"):
         raise HTTPException(status_code=400, detail="Nieprawidłowy kolor")
+    if request.llm_commentary:
+        await ensure_monthly_available(
+            db, user=current.user, key="ai_bot_commentary"
+        )
     try:
         model = await get_visible_bot(db, bot_id=request.bot_id, user=current.user)
         bot = bot_response(model, current.user)
     except BotNotFoundError:
         raise HTTPException(status_code=404, detail="Nie znaleziono bota")
     try:
-        async with bot_games.lock(session_id):
-            return await bot_games.start(
-                session_id,
-                bot,
-                request.player_color,
-                llm_commentary=request.llm_commentary,
-            )
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="bot_move",
+            concurrency_group="engine",
+            lock_ttl_seconds=60,
+        ):
+            async with bot_games.lock(session_id):
+                return await bot_games.start(
+                    session_id,
+                    bot,
+                    request.player_color,
+                    llm_commentary=request.llm_commentary,
+                )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -286,11 +320,29 @@ async def current_bot_game(session_id: str = Depends(get_session_id)):
 
 @app.post("/api/bot-games/move")
 async def bot_game_move(
-    request: BotMoveRequest, session_id: str = Depends(get_session_id)
+    request: BotMoveRequest,
+    session_id: str = Depends(get_session_id),
+    current: CurrentAuth = Depends(require_csrf),
+    db: AsyncSession = Depends(get_db_session),
 ):
     try:
-        async with bot_games.lock(session_id):
-            return await bot_games.move(session_id, request.uci)
+        game = bot_games.games.get(session_id)
+        if game and game.llm_commentary_enabled:
+            await ensure_monthly_available(
+                db, user=current.user, key="ai_bot_commentary"
+            )
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="bot_move",
+            concurrency_group="engine",
+            lock_ttl_seconds=60,
+        ):
+            async with bot_games.lock(session_id):
+                response = await bot_games.move(session_id, request.uci)
+        if response.get("llm_commentary"):
+            await record_usage(db, user=current.user, key="ai_bot_commentary")
+        return response
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except FileNotFoundError as exc:
@@ -298,7 +350,10 @@ async def bot_game_move(
 
 
 @app.post("/api/bot-games/resign")
-async def resign_bot_game(session_id: str = Depends(get_session_id)):
+async def resign_bot_game(
+    session_id: str = Depends(get_session_id),
+    current: CurrentAuth = Depends(require_csrf),
+):
     try:
         return bot_games.resign(session_id)
     except ValueError as exc:
@@ -306,7 +361,10 @@ async def resign_bot_game(session_id: str = Depends(get_session_id)):
 
 
 @app.post("/api/bot-games/draw-offer")
-async def bot_game_draw(session_id: str = Depends(get_session_id)):
+async def bot_game_draw(
+    session_id: str = Depends(get_session_id),
+    current: CurrentAuth = Depends(require_csrf),
+):
     try:
         return bot_games.draw_offer(session_id)
     except ValueError as exc:
@@ -315,7 +373,9 @@ async def bot_game_draw(session_id: str = Depends(get_session_id)):
 
 @app.post("/api/bot-games/to-analysis")
 async def bot_game_to_analysis(
-    session_id: str = Depends(get_session_id), game: ChessGame = Depends(get_game)
+    session_id: str = Depends(get_session_id),
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
 ):
     bot_game = bot_games.games.get(session_id)
     if not bot_game or bot_game.status == "active":
@@ -344,7 +404,11 @@ async def get_position(game: ChessGame = Depends(get_game)):
 
 
 @app.post("/api/move")
-async def make_move(request: MoveRequest, game: ChessGame = Depends(get_game)):
+async def make_move(
+    request: MoveRequest,
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
+):
     """Wykonuje ruch na szachownicy."""
     success = game.make_move(
         request.uci, preserve_imported_context=request.preserve_imported_context
@@ -357,7 +421,9 @@ async def make_move(request: MoveRequest, game: ChessGame = Depends(get_game)):
 
 @app.post("/api/undo")
 async def undo_move(
-    request: UndoRequest | None = None, game: ChessGame = Depends(get_game)
+    request: UndoRequest | None = None,
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
 ):
     """Cofa ostatni ruch na szachownicy."""
     preserve_imported_context = request.preserve_imported_context if request else False
@@ -412,6 +478,7 @@ async def analyze_current_position(
     lines: int = 3,
     game: ChessGame = Depends(get_game),
     current: CurrentAuth = Depends(require_entitlement("basic_analysis")),
+    db: AsyncSession = Depends(get_db_session),
 ):
     """
     Zwraca ocenę bieżącej pozycji ze Stockfisha.
@@ -420,20 +487,32 @@ async def analyze_current_position(
     """
     current_fen = game.get_fen()
 
+    safe_time_limit = min(max(time_limit, 0.05), 2.0)
+    safe_lines = min(max(lines, 1), 5)
     try:
-        # Przekazujemy argument lines jako multipv
-        analysis = await analyze_position(
-            current_fen, time_limit=time_limit, multipv=lines
-        )
-        return analysis
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="stockfish_position",
+            concurrency_group="engine",
+            lock_ttl_seconds=30,
+        ):
+            return await analyze_position(
+                current_fen, time_limit=safe_time_limit, multipv=safe_lines
+            )
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001 - expose engine failure through the API
         raise HTTPException(status_code=500, detail=f"Wystąpił błąd silnika: {e!s}")
 
 
 @app.post("/api/reset")
-async def reset_game(game: ChessGame = Depends(get_game)):
+async def reset_game(
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
+):
     """Wymusza reset gry do pozycji startowej."""
     game.reset()
     return {"fen": game.get_fen(), "history": game.get_history()}
@@ -456,7 +535,11 @@ async def chesscom_recent_games(username: str, limit: int = 12):
 
 
 @app.post("/api/import-game")
-async def import_game(request: ImportGameRequest, game: ChessGame = Depends(get_game)):
+async def import_game(
+    request: ImportGameRequest,
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
+):
     try:
         metadata = {
             key: value
@@ -470,7 +553,9 @@ async def import_game(request: ImportGameRequest, game: ChessGame = Depends(get_
 
 @app.post("/api/imported-game/position")
 async def imported_game_position(
-    request: GamePositionRequest, game: ChessGame = Depends(get_game)
+    request: GamePositionRequest,
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
 ):
     try:
         return game.go_to_imported_ply(request.ply)
@@ -484,7 +569,8 @@ async def analyze_imported_game(
     time_limit: float = 0.15,
     session_id: str = Depends(get_session_id),
     game: ChessGame = Depends(get_game),
-    current: CurrentAuth = Depends(require_entitlement("ai_game_review")),
+    current: CurrentAuth = Depends(require_entitlement("ai_game_review", write=True)),
+    db: AsyncSession = Depends(get_db_session),
 ):
     imported_game = game.get_imported_game()
     if not imported_game:
@@ -503,16 +589,24 @@ async def analyze_imported_game(
         )
     active_analysis_tasks[session_id] = current_task
     try:
-        engine_data = await analyze_game(
-            imported_game["pgn"], time_limit=min(max(time_limit, 0.05), 1.0)
-        )
-        response = await generate_game_analysis(
-            pgn=imported_game["pgn"],
-            engine_analysis=engine_data,
-            metadata=imported_game["metadata"],
-            user_prompt=request.message,
-            model=selected_model,
-        )
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="ai_game_review",
+            monthly_key="ai_game_review",
+            concurrency_group="full_analysis",
+            lock_ttl_seconds=600,
+        ):
+            engine_data = await analyze_game(
+                imported_game["pgn"], time_limit=min(max(time_limit, 0.05), 1.0)
+            )
+            response = await generate_game_analysis(
+                pgn=imported_game["pgn"],
+                engine_analysis=engine_data,
+                metadata=imported_game["metadata"],
+                user_prompt=request.message,
+                model=selected_model,
+            )
         return {
             "response": response,
             "model": selected_model,
@@ -520,6 +614,8 @@ async def analyze_imported_game(
         }
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Analiza została przerwana")
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001 - normalize analysis pipeline failures
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -532,7 +628,8 @@ async def chat_with_agent(
     request: ChatRequest,
     session_id: str = Depends(get_session_id),
     game: ChessGame = Depends(get_game),
-    current: CurrentAuth = Depends(require_entitlement("ai_game_review")),
+    current: CurrentAuth = Depends(require_entitlement("ai_game_review", write=True)),
+    db: AsyncSession = Depends(get_db_session),
     time_limit: float = 2.0,  # Domyślnie dajemy Krakenowi 2 sekundy, jeśli frontend nic nie prześle
     lines: int = 3,  # Domyślnie 3 linie MultiPV
 ):
@@ -553,28 +650,37 @@ async def chat_with_agent(
         )
     active_analysis_tasks[session_id] = current_task
     try:
-        # Przekazujemy parametry pobrane dynamicznie z adresu URL
-        stockfish_data = await analyze_position(
-            current_fen, time_limit=time_limit, multipv=lines
-        )
-        lichess_data = await get_opening_explorer_data(
-            current_fen,
-            fallback_fens=game.get_ancestor_fens(),
-        )
-
-        # Wysyłamy bogaty kontekst do Agenta LLM
-        analysis_text = await generate_chess_analysis(
-            fen=current_fen,
-            lichess_data=lichess_data,
-            stockfish_data=stockfish_data,
-            user_prompt=request.message,
-            model=selected_model,
-        )
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="ai_chat",
+            monthly_key="ai_chat",
+            concurrency_group="full_analysis",
+            lock_ttl_seconds=300,
+        ):
+            stockfish_data = await analyze_position(
+                current_fen,
+                time_limit=min(max(time_limit, 0.05), 2.0),
+                multipv=min(max(lines, 1), 5),
+            )
+            lichess_data = await get_opening_explorer_data(
+                current_fen,
+                fallback_fens=game.get_ancestor_fens(),
+            )
+            analysis_text = await generate_chess_analysis(
+                fen=current_fen,
+                lichess_data=lichess_data,
+                stockfish_data=stockfish_data,
+                user_prompt=request.message,
+                model=selected_model,
+            )
 
         return {"response": analysis_text, "model": selected_model}
 
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Analiza została przerwana")
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001 - normalize chat pipeline failures
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -583,7 +689,10 @@ async def chat_with_agent(
 
 
 @app.post("/api/cancel-analysis")
-async def cancel_analysis(session_id: str = Depends(get_session_id)):
+async def cancel_analysis(
+    session_id: str = Depends(get_session_id),
+    current: CurrentAuth = Depends(require_csrf),
+):
     task = active_analysis_tasks.get(session_id)
     if task is None or task.done():
         return {"cancelled": False}

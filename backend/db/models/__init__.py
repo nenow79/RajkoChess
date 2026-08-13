@@ -5,6 +5,8 @@ from db.models.bot import Bot
 from db.models.entitlement import Entitlement
 from db.models.enums import AuthTokenType, BotVisibility, SystemRole, UserStatus
 from db.models.identity import Identity
+from db.models.plan_grant import PlanGrant
+from db.models.usage_event import UsageEvent
 from db.models.user import User
 
 __all__ = [
@@ -16,7 +18,9 @@ __all__ = [
     "BotVisibility",
     "Entitlement",
     "Identity",
+    "PlanGrant",
     "SystemRole",
     "User",
     "UserStatus",
+    "UsageEvent",
 ]

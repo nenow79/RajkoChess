@@ -39,6 +39,20 @@ class EmailVerificationResendRequest(BaseModel):
     email: EmailStr
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_is_strong_enough(cls, value: str) -> str:
+        return validate_password_strength(value)
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: EmailStr

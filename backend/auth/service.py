@@ -186,6 +186,110 @@ async def find_user_for_email_verification(
     return await db.scalar(select(User).where(User.email == normalize_email(email)))
 
 
+async def find_user_for_password_reset(
+    db: AsyncSession, *, email: str
+) -> User | None:
+    return await db.scalar(
+        select(User)
+        .join(Identity, Identity.user_id == User.id)
+        .where(
+            User.email == normalize_email(email),
+            User.status == UserStatus.ACTIVE,
+            User.email_verified_at.is_not(None),
+            Identity.provider == PASSWORD_PROVIDER,
+            Identity.password_hash.is_not(None),
+        )
+    )
+
+
+async def create_password_reset_token(
+    db: AsyncSession, *, user: User
+) -> CreatedAuthToken:
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    token = generate_secret()
+    model = AuthToken(
+        user_id=user.id,
+        type=AuthTokenType.PASSWORD_RESET,
+        token_hash=hash_secret(token),
+        created_at=now,
+        expires_at=now + timedelta(minutes=settings.password_reset_minutes),
+    )
+    db.add(model)
+    await db.commit()
+    return CreatedAuthToken(model=model, token=token)
+
+
+async def supersede_password_reset_tokens(
+    db: AsyncSession, *, user_id, keep_token_id
+) -> None:
+    await db.execute(
+        update(AuthToken)
+        .where(
+            AuthToken.user_id == user_id,
+            AuthToken.type == AuthTokenType.PASSWORD_RESET,
+            AuthToken.id != keep_token_id,
+            AuthToken.consumed_at.is_(None),
+        )
+        .values(consumed_at=datetime.now(timezone.utc))
+    )
+    await db.commit()
+
+
+async def reset_password_with_token(
+    db: AsyncSession, *, token: str, new_password: str
+) -> User:
+    now = datetime.now(timezone.utc)
+    model = await db.scalar(
+        select(AuthToken)
+        .options(joinedload(AuthToken.user))
+        .where(
+            AuthToken.token_hash == hash_secret(token),
+            AuthToken.type == AuthTokenType.PASSWORD_RESET,
+        )
+        .with_for_update(of=AuthToken)
+    )
+    if (
+        model is None
+        or model.consumed_at is not None
+        or model.expires_at <= now
+        or model.user.status != UserStatus.ACTIVE
+        or model.user.email_verified_at is None
+    ):
+        raise InvalidAuthTokenError
+
+    identity = await db.scalar(
+        select(Identity).where(
+            Identity.user_id == model.user_id,
+            Identity.provider == PASSWORD_PROVIDER,
+        )
+    )
+    if identity is None or identity.password_hash is None:
+        raise InvalidAuthTokenError
+
+    identity.password_hash = await hash_password(new_password)
+    await db.execute(
+        update(AuthToken)
+        .where(
+            AuthToken.user_id == model.user_id,
+            AuthToken.type == AuthTokenType.PASSWORD_RESET,
+            AuthToken.consumed_at.is_(None),
+        )
+        .values(consumed_at=now)
+    )
+    await db.execute(
+        update(AuthSession)
+        .where(
+            AuthSession.user_id == model.user_id,
+            AuthSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=now, revoked_reason="password_reset")
+    )
+    model.consumed_at = now
+    await db.commit()
+    return model.user
+
+
 async def create_session(
     db: AsyncSession, *, user: User, user_agent: str | None
 ) -> CreatedSession:

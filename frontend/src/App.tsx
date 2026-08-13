@@ -13,6 +13,7 @@ import BotGameMode from "./components/BotGameMode";
 import AuthScreen from "./components/AuthScreen";
 import UserMenu from "./components/UserMenu";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
+import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { useAuth } from "./auth/useAuth";
 import type {
   AppMode,
@@ -350,8 +351,14 @@ export default function App() {
     setMode("analysis");
   };
 
-  if (window.location.pathname === "/verify-email") {
+  const routePath = window.location.pathname.replace(/\/+$/, "");
+
+  if (routePath.endsWith("/verify-email")) {
     return <VerifyEmailScreen />;
+  }
+
+  if (routePath.endsWith("/reset-password")) {
+    return <ResetPasswordScreen />;
   }
 
   if (status === "loading") {
