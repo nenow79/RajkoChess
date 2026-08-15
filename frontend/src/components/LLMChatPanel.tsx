@@ -1,12 +1,11 @@
-import { useState, useRef, useEffect, type ChangeEvent, type KeyboardEvent } from "react";
+import { useState, useRef, useEffect, type KeyboardEvent } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_URL } from "../config";
-import type { GameAnalysis, ImportedGame, LlmModel } from "../types";
+import type { GameAnalysis, ImportedGame } from "../types";
 import { getAuthErrorMessage } from "../auth/api";
 
-const MODEL_STORAGE_KEY = "rajko-selected-model";
 interface ChatMessage {
   role: "bot" | "user";
   text: string;
@@ -27,8 +26,6 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [models, setModels] = useState<LlmModel[]>([]);
-  const [selectedModel, setSelectedModel] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const analysisControllerRef = useRef<AbortController | null>(null);
 
@@ -41,29 +38,8 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
     scrollToBottom();
   }, [messages]);
 
-  useEffect(() => {
-    axios.get<{ models: LlmModel[]; default_model: string }>(`${API_URL}/models`)
-      .then((res) => {
-        const availableModels = res.data.models;
-        const savedModel = localStorage.getItem(MODEL_STORAGE_KEY);
-        const initialModel = savedModel && availableModels.some((model) => model.id === savedModel)
-          ? savedModel
-          : res.data.default_model;
-
-        setModels(availableModels);
-        setSelectedModel(initialModel);
-      })
-      .catch((err) => console.error("Błąd pobierania modeli:", err));
-  }, []);
-
-  const handleModelChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const model = e.target.value;
-    setSelectedModel(model);
-    localStorage.setItem(MODEL_STORAGE_KEY, model);
-  };
-
   const handleSend = async () => {
-    if (!input.trim() || isLoading || !selectedModel) return;
+    if (!input.trim() || isLoading) return;
 
     const userMsg = input.trim();
     setInput("");
@@ -78,7 +54,6 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
       // Endpoint domyślnie da silnikowi 2 sekundy i poprosi o 3 linie (ustawione w FastAPI)
       const res = await axios.post<{ response: string }>(`${API_URL}/chat`, {
         message: userMsg,
-        model: selectedModel
       }, {
         signal: controller.signal,
       });
@@ -98,7 +73,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   };
 
   const handleAnalyzeGame = async () => {
-    if (!importedGame || isLoading || !selectedModel) return;
+    if (!importedGame || isLoading) return;
 
     setMessages(prev => [...prev, {
       role: "user",
@@ -110,8 +85,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
 
     try {
       const res = await axios.post<{ response: string; engine_analysis: GameAnalysis }>(`${API_URL}/analyze-game`, {
-        message: `Przeanalizuj całą partię z perspektywy gracza ${playerUsername}.`,
-        model: selectedModel,
+        message: `Przeanalizuj całą partię z perspektywy ${playerUsername ? `gracza ${playerUsername}` : "użytkownika"}.`,
       }, {
         signal: controller.signal,
       });
@@ -167,7 +141,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
             type="button"
             className="game-analysis-btn"
             onClick={handleAnalyzeGame}
-            disabled={!importedGame || isLoading || !selectedModel}
+            disabled={!importedGame || isLoading}
             title={importedGame ? "Analizuj zaimportowaną partię" : "Najpierw wybierz partię Chess.com"}
           >
             Analizuj całą partię
@@ -182,20 +156,6 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
               Przerwij analizę
             </button>
           )}
-          <label className="model-picker">
-            <span>Model</span>
-            <select
-              value={selectedModel}
-              onChange={handleModelChange}
-              disabled={isLoading || models.length === 0}
-            >
-              {models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.label} · {model.description} · ${model.input_price}/${model.output_price}
-                </option>
-              ))}
-            </select>
-          </label>
           <button
             type="button"
             className="chat-clear"
@@ -243,10 +203,10 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
           <button
             className="chat-send"
             onClick={handleSend}
-            disabled={isLoading || !input.trim() || !selectedModel}
+            disabled={isLoading || !input.trim()}
             style={{
-              opacity: isLoading || !input.trim() || !selectedModel ? 0.7 : 1,
-              cursor: isLoading || !input.trim() || !selectedModel ? 'not-allowed' : 'pointer'
+              opacity: isLoading || !input.trim() ? 0.7 : 1,
+              cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer'
             }}
           >
             Wyślij

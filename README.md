@@ -70,9 +70,12 @@ POSTGRES_DB=chess_app
 POSTGRES_USER=chess_app
 POSTGRES_PASSWORD=
 POSTGRES_SSLMODE=prefer
+POSTGRES_CONNECT_TIMEOUT=5
 ```
 
-`LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu domyślnego z kodu.
+`LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu
+domyślnego z kodu. Jest to wewnętrzne ustawienie operatora: frontend nie ujawnia
+identyfikatora modelu ani cen tokenów i nie pozwala klientowi wskazać modelu.
 `BOT_COMMENTARY_MODEL` wybiera model krótkich komentarzy w trybie gry z botem.
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
@@ -145,6 +148,10 @@ EMAIL_VERIFICATION_HOURS=24
 PASSWORD_RESET_MINUTES=60
 REDIS_URL=redis://127.0.0.1:6379/0
 RATE_LIMIT_KEY_SECRET=ustaw-długi-losowy-sekret
+GLOBAL_ENGINE_CONCURRENCY=2
+GLOBAL_FULL_ANALYSIS_CONCURRENCY=1
+GLOBAL_LLM_CONCURRENCY=2
+GLOBAL_EXTERNAL_API_CONCURRENCY=4
 ```
 
 Nie wpisuj hasła SMTP do repozytorium. Nowe konto nie może się zalogować przed
@@ -225,6 +232,8 @@ Każdy użytkownik bez aktywnego grantu Premium korzysta automatycznie z Free.
 Administrator może w panelu „Administracja” przyznać Premium na wybraną liczbę
 dni, przedłużyć aktywny okres albo go odwołać. Po terminie konto automatycznie
 wraca do Free. Wszystkie te operacje wymagają powodu i trafiają do `audit_log`.
+Użytkownik może rozwinąć oznaczenie planu w nagłówku, aby sprawdzić bieżące
+wykorzystanie miesięcznych limitów.
 
 | Funkcja | Free | Premium |
 |---|---:|---:|
@@ -264,9 +273,16 @@ cd backend
 
 Backend ogranicza próby logowania, rejestracji, ponownej weryfikacji i resetu
 hasła per IP oraz per konto. Stockfish i LLM mają limity per użytkownik oraz
-rozproszoną blokadę jednej równoległej operacji. Odpowiedź `429` zawiera
-`Retry-After`. Przy awarii Redis logowanie pozostaje chronione przez nginx,
-natomiast rejestracja, poczta oraz kosztowne operacje zwracają bezpieczne `503`.
+rozproszoną blokadę jednej równoległej operacji. Dodatkowy atomowy semafor Redis
+ogranicza łączną liczbę operacji wszystkich użytkowników dla silnika, pełnych
+analiz, LLM i zewnętrznych API. Odpowiedź `429` zawiera `Retry-After`. Przy
+awarii Redis logowanie pozostaje chronione przez nginx, natomiast rejestracja,
+poczta oraz kosztowne operacje zwracają bezpieczne `503`.
+
+Wartości `GLOBAL_*_CONCURRENCY` należy dobrać do CPU, RAM i liczby procesów
+backendu. Ustawienia startowe są celowo ostrożne dla małej bety. Import
+Chess.com wymaga zalogowania, ma dodatkowy limit per IP i użytkownik oraz
+przegląda maksymalnie 12 ostatnich archiwów miesięcznych.
 
 ## Szybkie uruchomienie
 
@@ -312,7 +328,14 @@ Vite proxy domyślnie kieruje zapytania `/api` do `http://127.0.0.1:8000`.
 cd frontend && npm run lint
 cd frontend && npm run build
 cd backend && ../.venv/bin/python -m unittest discover -s tests -v
+pyright --project pyrightconfig.json
 ```
+
+Te same kontrole uruchamia workflow GitHub Actions w `.github/workflows/ci.yml`.
+Backendowy job korzysta z testowego PostgreSQL i Redis, stosuje migracje,
+uruchamia diagnostykę limitów oraz pełny przepływ rejestracji i sesji. Lokalnie
+test integracyjny bazy pozostaje pominięty, dopóki nie ustawisz jawnie
+`RUN_DATABASE_INTEGRATION_TESTS=1` dla osobnej bazy testowej.
 
 Opcjonalnie można zainstalować zależności developerskie i uruchomić testy przez pytest:
 
@@ -345,10 +368,12 @@ automatycznie:
 ./deploy/deploy.sh
 ```
 
-Skrypt pobiera i scala zmiany z Git, aktualizuje zależności Pythona i Node.js,
-buduje frontend, synchronizuje go do `/var/www/rajko-chess/chess`, restartuje
-API oraz sprawdza i przeładowuje Nginx. Aby wdrożyć bieżący lokalny kod bez
-wykonywania `git pull`, użyj `./deploy/deploy.sh --no-pull`.
+Skrypt pobiera i scala zmiany z Git, aktualizuje zależności, uruchamia testy
+backendu, sprawdza PostgreSQL, Redis i atomowe limity, wykonuje migracje, lint
+oraz build frontendu, a przed restartem API weryfikuje konfigurację Nginx.
+Wdrożenie kończy się błędem, jeśli `/api/health` nie potwierdzi zarówno
+PostgreSQL, jak i Redis. Aby wdrożyć bieżący lokalny kod bez wykonywania
+`git pull`, użyj `./deploy/deploy.sh --no-pull`.
 
 Build frontendu:
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { API_URL } from "../config";
 import { useAuth } from "../auth/useAuth";
+import { getAuthErrorMessage } from "../auth/api";
 import type { BotDraft, BotProfile, BotStyleKey, BotVisibility, OpeningSearchResult, PlayerColor } from "../types";
 
 const EMPTY: BotDraft = {
@@ -16,9 +17,6 @@ interface BotCreatorProps {
   onSaved: (bot: BotProfile) => void;
   onClose: () => void;
 }
-
-const apiError = (error: unknown, fallback: string) =>
-  axios.isAxiosError<{ detail?: string }>(error) ? error.response?.data?.detail || fallback : fallback;
 
 export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorProps) {
   const { user } = useAuth();
@@ -46,7 +44,7 @@ export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorP
       const res = await axios.post<{ draft: BotDraft; warnings: string[] }>(`${API_URL}/bots/draft`, { description });
       setDraft(res.data.draft); setWarnings(res.data.warnings || []);
     } catch (err) {
-      setError(apiError(err, "Nie udało się przygotować profilu."));
+      setError(getAuthErrorMessage(err, "Nie udało się przygotować profilu."));
     } finally { setLoading(false); }
   };
 
@@ -59,7 +57,7 @@ export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorP
         : await axios.post<BotProfile>(`${API_URL}/bots`, { ...draft, visibility });
       onSaved(res.data);
     } catch (err) {
-      setError(apiError(err, "Nie udało się zapisać bota."));
+      setError(getAuthErrorMessage(err, "Nie udało się zapisać bota."));
     } finally { setLoading(false); }
   };
 

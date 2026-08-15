@@ -70,7 +70,7 @@ export default function ChessComPanel({
   return (
     <div className="side-panel chesscom-panel">
       <div className="chesscom-header">
-        <h3 className="panel-title">Chess.com · {username}</h3>
+        <h3 className="panel-title">Chess.com{username ? ` · ${username}` : ""}</h3>
         <button type="button" className="chesscom-open" onClick={() => setIsOpen(true)}>
           Wybierz partię
         </button>
@@ -112,20 +112,22 @@ export default function ChessComPanel({
                   value={draftUsername}
                   onChange={(e) => setDraftUsername(e.target.value)}
                   disabled={isLoading}
-                  placeholder="nenow79"
+                  placeholder="Nazwa użytkownika Chess.com"
                   autoComplete="username"
                 />
               </label>
               <button type="submit" className="chesscom-user-submit" disabled={isLoading || !draftUsername.trim()}>
                 Pobierz
               </button>
-              <button type="button" className="chesscom-refresh" onClick={() => onRefresh()} disabled={isLoading}>
+              <button type="button" className="chesscom-refresh" onClick={() => onRefresh()} disabled={isLoading || !username}>
                 Odśwież
               </button>
             </form>
 
             {isLoading ? (
               <p className="loading-text">Pobieram ostatnie partie...</p>
+            ) : !username ? (
+              <p className="loading-text">Wpisz nazwę użytkownika, aby pobrać jego ostatnie partie.</p>
             ) : games.length === 0 ? (
               <p className="loading-text">Nie znaleziono zakończonych partii.</p>
             ) : (

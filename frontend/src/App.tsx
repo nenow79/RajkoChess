@@ -15,6 +15,7 @@ import UserMenu from "./components/UserMenu";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { useAuth } from "./auth/useAuth";
+import { getAuthErrorMessage } from "./auth/api";
 import type {
   AppMode,
   BotGame,
@@ -27,7 +28,6 @@ import type {
   RatingRange,
 } from "./types";
 
-const DEFAULT_CHESSCOM_USERNAME = "nenow79";
 const LICHESS_RATING_BUCKETS = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 
 axios.defaults.withCredentials = true;
@@ -49,9 +49,10 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [explorerRatingRange, setExplorerRatingRange] = useState({ min: 400, max: 2500 });
   const [analysisData, setAnalysisData] = useState<PositionAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [chessComUsername, setChessComUsername] = useState(DEFAULT_CHESSCOM_USERNAME);
+  const [chessComUsername, setChessComUsername] = useState("");
   const [chessComGames, setChessComGames] = useState<ChessComGame[]>([]);
-  const [isLoadingChessCom, setIsLoadingChessCom] = useState(true);
+  const [isLoadingChessCom, setIsLoadingChessCom] = useState(false);
+  const [error, setError] = useState("");
   const [importedGame, setImportedGame] = useState<ImportedGame | null>(null);
   const [gameNavigation, setGameNavigation] = useState<GameNavigation | null>(null);
   const [gameAnalysis, setGameAnalysis] = useState<GameAnalysis | null>(null);
@@ -65,7 +66,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
 
     axios.get(`${API_URL}/explorer`, { params: { ratings } })
       .then((res) => setExplorerData(res.data))
-      .catch((err) => console.error("Błąd Lichess:", err));
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się pobrać statystyk Lichess.")));
   };
 
   const handleExplorerRatingRangeChange = (range: RatingRange) => {
@@ -75,10 +76,11 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   };
 
   const fetchAnalysis = () => {
+    setError("");
     setIsAnalyzing(true);
     axios.get(`${API_URL}/analyze?time_limit=1.0&lines=3`)
       .then((res) => setAnalysisData(res.data))
-      .catch((err) => console.error("Błąd Stockfish:", err))
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się przeanalizować pozycji.")))
       .finally(() => setIsAnalyzing(false));
   };
 
@@ -97,21 +99,25 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
 
   const fetchChessComGames = (username: string = chessComUsername) => {
     const normalizedUsername = username.trim();
-    if (!normalizedUsername) return;
+    if (!normalizedUsername) {
+      setIsLoadingChessCom(false);
+      return;
+    }
 
+    setError("");
     setIsLoadingChessCom(true);
     axios.get(`${API_URL}/chesscom/${encodeURIComponent(normalizedUsername)}/recent?limit=12`)
       .then((res) => setChessComGames(res.data.games))
-      .catch((err) => console.error("Błąd Chess.com:", err))
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się pobrać partii Chess.com.")))
       .finally(() => setIsLoadingChessCom(false));
   };
 
   const handleChessComUsernameChange = (username: string) => {
-    const normalizedUsername = username.trim() || DEFAULT_CHESSCOM_USERNAME;
+    const normalizedUsername = username.trim();
     setChessComUsername(normalizedUsername);
     setChessComGames([]);
     clearImportedGameContext();
-    fetchChessComGames(normalizedUsername);
+    if (normalizedUsername) fetchChessComGames(normalizedUsername);
   };
 
   useEffect(() => {
@@ -141,17 +147,13 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           consumeInitialGameRef.current?.();
         }
       })
-      .catch((err) => console.error("Błąd backendu:", err));
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się odtworzyć pozycji.")));
     axios.get(`${API_URL}/explorer`)
       .then((res) => setExplorerData(res.data))
-      .catch((err) => console.error("Błąd Lichess:", err));
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się pobrać statystyk Lichess.")));
     axios.get(`${API_URL}/analyze?time_limit=1.0&lines=3`)
       .then((res) => setAnalysisData(res.data))
-      .catch((err) => console.error("Błąd Stockfish:", err));
-    axios.get(`${API_URL}/chesscom/${encodeURIComponent(DEFAULT_CHESSCOM_USERNAME)}/recent?limit=12`)
-      .then((res) => setChessComGames(res.data.games))
-      .catch((err) => console.error("Błąd Chess.com:", err))
-      .finally(() => setIsLoadingChessCom(false));
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się przeanalizować pozycji.")));
   }, []); // The workspace is remounted when entering analysis mode.
 
   const handleImportGame = (selectedGame: ChessComGame) => {
@@ -174,7 +176,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         });
         fetchAllData();
       })
-      .catch((err) => console.error("Błąd importu PGN:", err));
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się zaimportować partii.")));
   };
 
   function onPieceDrop(sourceSquare: Square, targetSquare: Square) {
@@ -205,7 +207,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           fetchAllData();
         })
         .catch((err) => {
-          console.error("Backend odrzucił ruch:", err);
+          setError(getAuthErrorMessage(err, "Serwer odrzucił ruch."));
           gameRef.current.undo();
           setFen(gameRef.current.fen());
           setBoardKey(prev => prev + 1);
@@ -236,7 +238,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         }
         fetchAllData();
       })
-      .catch(err => console.error("Błąd cofania:", err));
+      .catch(err => setError(getAuthErrorMessage(err, "Nie udało się cofnąć ruchu.")));
   };
 
   const handleReset = () => {
@@ -252,7 +254,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         setIsVariationMode(false);
         fetchAllData();
       })
-      .catch(err => console.error("Błąd resetu:", err));
+      .catch(err => setError(getAuthErrorMessage(err, "Nie udało się zresetować pozycji.")));
   };
 
   const handleNavigate = (ply: number) => {
@@ -269,7 +271,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         });
         fetchAllData();
       })
-      .catch((err) => console.error("Błąd nawigacji po partii:", err));
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się przejść do wybranego ruchu.")));
   };
 
   return (
@@ -286,6 +288,13 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           <UserMenu />
         </div>
       </header>
+
+      {error && (
+        <div className="workspace-error" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError("")} aria-label="Zamknij komunikat">×</button>
+        </div>
+      )}
 
       <div className="app-layout">
 

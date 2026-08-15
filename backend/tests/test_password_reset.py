@@ -32,7 +32,10 @@ class PasswordResetEmailTests(unittest.TestCase):
 
         self.assertEqual(message["To"], "gracz@example.com")
         self.assertEqual(message["From"], "Rajko Chess <noreply@rajko.pl>")
-        self.assertIn("45 minut", message.get_body(preferencelist=("plain",)).get_content())
+        plain_body = message.get_body(preferencelist=("plain",))
+        if plain_body is None:
+            self.fail("Wiadomość resetująca nie zawiera części tekstowej")
+        self.assertIn("45 minut", plain_body.get_content())
         bodies = list(message.iter_parts())
         self.assertEqual(len(bodies), 2)
         self.assertTrue(

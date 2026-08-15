@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from functools import lru_cache
 
 from settings import get_settings
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -34,3 +35,12 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def database_healthcheck() -> bool:
+    try:
+        async with get_engine().connect() as connection:
+            await connection.execute(text("SELECT 1"))
+        return True
+    except Exception:  # noqa: BLE001 - readiness must normalize connection failures
+        return False

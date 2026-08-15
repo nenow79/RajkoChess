@@ -67,15 +67,33 @@ fi
 "$VENV_DIR/bin/python" -m pip install -r "$PROJECT_DIR/backend/requirements.txt"
 "$VENV_DIR/bin/python" -m compileall -q "$PROJECT_DIR/backend"
 
+log "Testy backendu"
+(
+  cd "$PROJECT_DIR/backend"
+  "$VENV_DIR/bin/python" -m unittest discover -s tests
+)
+
+log "Kontrola PostgreSQL i Redis"
+(
+  cd "$PROJECT_DIR/backend"
+  "$VENV_DIR/bin/python" -m scripts.check_database
+  "$VENV_DIR/bin/python" -m scripts.check_redis
+  "$VENV_DIR/bin/python" -m scripts.check_rate_limits
+)
+
+log "Instalacja zależności i budowanie frontendu"
+npm --prefix "$FRONTEND_DIR" ci
+npm --prefix "$FRONTEND_DIR" run lint
+npm --prefix "$FRONTEND_DIR" run build
+
+log "Sprawdzanie konfiguracji Nginx"
+sudo nginx -t
+
 log "Aktualizacja schematu PostgreSQL"
 (
   cd "$PROJECT_DIR/backend"
   "$VENV_DIR/bin/alembic" upgrade head
 )
-
-log "Instalacja zależności i budowanie frontendu"
-npm --prefix "$FRONTEND_DIR" ci
-npm --prefix "$FRONTEND_DIR" run build
 
 log "Publikowanie frontendu w $WEB_ROOT"
 sudo mkdir -p "$WEB_ROOT"
@@ -87,7 +105,7 @@ sudo systemctl restart "$SERVICE_NAME"
 log "Sprawdzanie API"
 api_ready=0
 for attempt in {1..15}; do
-  if curl --fail --silent --show-error --max-time 3 "$HEALTH_URL" >/dev/null; then
+  if curl --fail --silent --show-error --max-time 10 "$HEALTH_URL" >/dev/null; then
     api_ready=1
     break
   fi
@@ -99,8 +117,7 @@ if ((api_ready == 0)); then
   exit 1
 fi
 
-log "Sprawdzanie i przeładowanie Nginx"
-sudo nginx -t
+log "Przeładowanie Nginx"
 sudo systemctl reload nginx
 
 log "Wdrożenie zakończone pomyślnie"

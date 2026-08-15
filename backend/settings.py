@@ -25,6 +25,9 @@ class Settings(BaseSettings):
         default=SecretStr(""), validation_alias="POSTGRES_PASSWORD"
     )
     postgres_sslmode: str = Field(default="prefer", validation_alias="POSTGRES_SSLMODE")
+    postgres_connect_timeout: int = Field(
+        default=5, ge=1, le=30, validation_alias="POSTGRES_CONNECT_TIMEOUT"
+    )
     auth_cookie_name: str = Field(
         default="rajko_session", validation_alias="AUTH_COOKIE_NAME"
     )
@@ -61,6 +64,24 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0", validation_alias="REDIS_URL"
+    )
+    global_engine_concurrency: int = Field(
+        default=2, ge=1, le=32, validation_alias="GLOBAL_ENGINE_CONCURRENCY"
+    )
+    global_full_analysis_concurrency: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        validation_alias="GLOBAL_FULL_ANALYSIS_CONCURRENCY",
+    )
+    global_llm_concurrency: int = Field(
+        default=2, ge=1, le=32, validation_alias="GLOBAL_LLM_CONCURRENCY"
+    )
+    global_external_api_concurrency: int = Field(
+        default=4,
+        ge=1,
+        le=64,
+        validation_alias="GLOBAL_EXTERNAL_API_CONCURRENCY",
     )
     rate_limit_key_secret: SecretStr = Field(
         default=SecretStr("local-development-rate-limit-secret"),
@@ -127,7 +148,10 @@ class Settings(BaseSettings):
             host=self.postgres_host,
             port=self.postgres_port,
             database=self.postgres_db,
-            query={"sslmode": self.postgres_sslmode},
+            query={
+                "sslmode": self.postgres_sslmode,
+                "connect_timeout": str(self.postgres_connect_timeout),
+            },
         )
 
 

@@ -58,11 +58,16 @@ export function getAuthErrorMessage(error: unknown, fallback: string): string {
   if (!axios.isAxiosError(error)) return fallback;
 
   const detail = error.response?.data?.detail;
-  if (typeof detail === "string") return detail;
+  let message = fallback;
+  if (typeof detail === "string") message = detail;
   if (Array.isArray(detail)) {
-    const message = detail.find((item) => typeof item?.msg === "string")?.msg;
-    if (message) return message.replace(/^Value error,\s*/, "");
+    const validationMessage = detail.find((item) => typeof item?.msg === "string")?.msg;
+    if (validationMessage) message = validationMessage.replace(/^Value error,\s*/, "");
   }
   if (!error.response) return "Nie udało się połączyć z serwerem.";
-  return fallback;
+  const retryAfter = error.response.headers["retry-after"];
+  if (error.response.status === 429 && retryAfter) {
+    return `${message} Spróbuj ponownie za ${retryAfter} s.`;
+  }
+  return message;
 }

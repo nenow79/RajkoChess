@@ -5,20 +5,23 @@ import chess.pgn
 import httpx
 
 BASE_URL = "https://api.chess.com/pub/player"
+ARCHIVE_URL_PREFIX = "https://api.chess.com/pub/player/"
+MAX_ARCHIVES_TO_SCAN = 12
 HEADERS = {
-    "User-Agent": "RajkoChessAnalyser/1.0 (local personal chess analysis app)",
+    "User-Agent": "RajkoChess/1.0 (https://rajko.pl/chess/)",
 }
 
 
 async def get_recent_games(username: str, limit: int = 12) -> list[dict]:
     """Returns the player's most recent completed standard chess games."""
-    async with httpx.AsyncClient(headers=HEADERS, timeout=20.0) as client:
+    timeout = httpx.Timeout(10.0, connect=5.0)
+    async with httpx.AsyncClient(headers=HEADERS, timeout=timeout) as client:
         archives_response = await client.get(f"{BASE_URL}/{username}/games/archives")
         archives_response.raise_for_status()
         archives = archives_response.json().get("archives", [])
 
         recent_games = []
-        for archive_url in reversed(archives):
+        for archive_url in _recent_safe_archive_urls(archives):
             response = await client.get(archive_url)
             response.raise_for_status()
 
@@ -33,6 +36,17 @@ async def get_recent_games(username: str, limit: int = 12) -> list[dict]:
                 break
 
     return [_summarize_game(game, username) for game in recent_games[:limit]]
+
+
+def _recent_safe_archive_urls(archives: object) -> list[str]:
+    if not isinstance(archives, list):
+        return []
+    safe = [
+        url
+        for url in archives
+        if isinstance(url, str) and url.startswith(ARCHIVE_URL_PREFIX)
+    ]
+    return list(reversed(safe[-MAX_ARCHIVES_TO_SCAN:]))
 
 
 def _summarize_game(game: dict, username: str) -> dict:

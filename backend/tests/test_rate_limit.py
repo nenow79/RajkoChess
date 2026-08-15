@@ -6,6 +6,7 @@ from rate_limit import (
     RateLimitStoreUnavailable,
     consume_rate_limit,
     enforce_rate_limit,
+    global_concurrency_slot,
     private_key,
 )
 from settings import Settings
@@ -62,6 +63,38 @@ class RedisRateLimitTests(unittest.IsolatedAsyncioTestCase):
                 window_seconds=60,
                 fail_closed=False,
             )
+
+    async def test_global_semaphore_releases_its_lease(self):
+        redis = AsyncMock()
+        redis.eval.side_effect = [[1, 0], 1]
+        with patch("rate_limit.get_redis", return_value=redis):
+            async with global_concurrency_slot(
+                bucket="engine", limit=2, ttl_seconds=30
+            ):
+                pass
+
+        self.assertEqual(redis.eval.await_count, 2)
+        acquire_args = redis.eval.await_args_list[0].args
+        self.assertEqual(acquire_args[2], "rajko:semaphore:engine")
+        self.assertEqual(acquire_args[4:], ("2", "30"))
+        release_args = redis.eval.await_args_list[1].args
+        self.assertEqual(release_args[2], "rajko:semaphore:engine")
+        self.assertEqual(acquire_args[3], release_args[3])
+
+    async def test_global_semaphore_returns_retry_after_when_full(self):
+        redis = AsyncMock()
+        redis.eval.return_value = [0, 7]
+        with (
+            patch("rate_limit.get_redis", return_value=redis),
+            self.assertRaises(HTTPException) as error,
+        ):
+            async with global_concurrency_slot(
+                bucket="engine", limit=1, ttl_seconds=30
+            ):
+                pass
+
+        self.assertEqual(error.exception.status_code, 429)
+        self.assertEqual(error.exception.headers, {"Retry-After": "7"})
 
 
 if __name__ == "__main__":

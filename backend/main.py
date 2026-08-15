@@ -37,8 +37,6 @@ from chess_logic.engine import analyze_game, analyze_position
 from chess_logic.game import ChessGame
 from chess_logic.lichess import get_opening_explorer_data
 from chess_logic.llm_agent import (
-    AVAILABLE_MODEL_IDS,
-    AVAILABLE_MODELS,
     generate_bot_profile,
     generate_chess_analysis,
     generate_game_analysis,
@@ -46,13 +44,14 @@ from chess_logic.llm_agent import (
 )
 from chess_logic.openings import find_opening, resolve_opening, search_openings
 from db.models import BotVisibility
-from db.session import get_db_session
+from db.session import database_healthcheck, get_db_session
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Path, Request, status
 from fastapi.middleware.cors import CORSMiddleware  # Dodany import
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from rate_limit import redis_healthcheck
+from rate_limit import enforce_rate_limit, redis_healthcheck, request_ip
 
 # Ładowanie zmiennych środowiskowych z .env
 load_dotenv()
@@ -64,7 +63,6 @@ app.include_router(admin_router)
 
 class ChatRequest(BaseModel):
     message: str = Field(default="", max_length=4000)
-    model: str | None = None
 
 
 class ImportGameRequest(BaseModel):
@@ -88,7 +86,6 @@ class BotMoveRequest(BaseModel):
 
 class BotDraftRequest(BaseModel):
     description: str = Field(min_length=1, max_length=1000)
-    model: str | None = None
 
 
 app.add_middleware(
@@ -105,9 +102,22 @@ active_analysis_tasks: dict[str, asyncio.Task] = {}
 bot_games = BotGameManager()
 
 
-@app.get("/api/health", include_in_schema=False)
-async def healthcheck():
-    return {"status": "ok", "redis": "ok" if await redis_healthcheck() else "down"}
+@app.get("/api/health", include_in_schema=False, response_model=None)
+async def healthcheck() -> dict[str, str] | JSONResponse:
+    database_ok, redis_ok = await asyncio.gather(
+        database_healthcheck(), redis_healthcheck()
+    )
+    content = {
+        "status": "ok" if database_ok and redis_ok else "unavailable",
+        "postgres": "ok" if database_ok else "down",
+        "redis": "ok" if redis_ok else "down",
+    }
+    if not database_ok or not redis_ok:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=content,
+        )
+    return content
 
 
 def get_session_id(current: CurrentAuth = Depends(get_current_auth)) -> str:
@@ -234,8 +244,6 @@ async def draft_bot(
 ):
     if not request.description.strip():
         raise HTTPException(status_code=400, detail="Opisz charakter bota")
-    if request.model and request.model not in AVAILABLE_MODEL_IDS:
-        raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
     try:
         async with limited_operation(
             db,
@@ -244,7 +252,7 @@ async def draft_bot(
             monthly_key="ai_bot_draft",
             concurrency_group="llm",
         ):
-            draft = await generate_bot_profile(request.description, request.model)
+            draft = await generate_bot_profile(request.description)
         warnings = []
         openings = []
         for color, queries in (draft.pop("opening_queries", {}) or {}).items():
@@ -519,12 +527,31 @@ async def reset_game(
 
 
 @app.get("/api/chesscom/{username}/recent")
-async def chesscom_recent_games(username: str, limit: int = 12):
+async def chesscom_recent_games(
+    request: Request,
+    username: str = Path(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9_-]+$"),
+    limit: int = 12,
+    current: CurrentAuth = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db_session),
+):
+    await enforce_rate_limit(
+        bucket="chesscom_ip",
+        identity=request_ip(request),
+        limit=60,
+        window_seconds=300,
+    )
     try:
-        return {
-            "username": username,
-            "games": await get_recent_games(username, min(max(limit, 1), 30)),
-        }
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="chesscom_import",
+            concurrency_group="external_api",
+            lock_ttl_seconds=30,
+        ):
+            return {
+                "username": username,
+                "games": await get_recent_games(username, min(max(limit, 1), 30)),
+            }
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=e.response.status_code,
@@ -578,9 +605,7 @@ async def analyze_imported_game(
             status_code=400, detail="Najpierw zaimportuj zakończoną partię"
         )
 
-    selected_model = request.model or get_default_model()
-    if selected_model not in AVAILABLE_MODEL_IDS:
-        raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
+    selected_model = get_default_model()
 
     current_task = asyncio.current_task()
     if current_task is None:
@@ -609,7 +634,6 @@ async def analyze_imported_game(
             )
         return {
             "response": response,
-            "model": selected_model,
             "engine_analysis": engine_data,
         }
     except asyncio.CancelledError:
@@ -638,10 +662,7 @@ async def chat_with_agent(
     przyjmując parametry czasu i głębokości silnika prosto z URL.
     """
     current_fen = game.get_fen()
-    selected_model = request.model or get_default_model()
-
-    if selected_model not in AVAILABLE_MODEL_IDS:
-        raise HTTPException(status_code=400, detail="Nieobsługiwany model LLM")
+    selected_model = get_default_model()
 
     current_task = asyncio.current_task()
     if current_task is None:
@@ -675,7 +696,7 @@ async def chat_with_agent(
                 model=selected_model,
             )
 
-        return {"response": analysis_text, "model": selected_model}
+        return {"response": analysis_text}
 
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Analiza została przerwana")
@@ -699,12 +720,3 @@ async def cancel_analysis(
 
     task.cancel()
     return {"cancelled": True}
-
-
-@app.get("/api/models")
-async def get_models():
-    """Zwraca modele LLM dostępne w interfejsie."""
-    return {
-        "default_model": get_default_model(),
-        "models": AVAILABLE_MODELS,
-    }

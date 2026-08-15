@@ -129,11 +129,3 @@ export interface BotGame {
   llm_commentary_enabled: boolean;
   llm_commentary: string | null;
 }
-
-export interface LlmModel {
-  id: string;
-  label: string;
-  description: string;
-  input_price: number;
-  output_price: number;
-}

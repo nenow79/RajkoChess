@@ -83,6 +83,24 @@ class AuthSchemaTests(unittest.TestCase):
             )
             self.assertIn({"SessionCookie": []}, operation.get("security", []))
 
+    def test_chesscom_import_requires_session_and_validates_username(self):
+        operation = app.openapi()["paths"]["/api/chesscom/{username}/recent"]["get"]
+        self.assertIn({"SessionCookie": []}, operation.get("security", []))
+        username = next(
+            parameter
+            for parameter in operation["parameters"]
+            if parameter["name"] == "username"
+        )
+        self.assertEqual(username["schema"]["maxLength"], 50)
+        self.assertEqual(username["schema"]["pattern"], "^[A-Za-z0-9_-]+$")
+
+    def test_llm_model_selection_is_not_exposed_to_clients(self):
+        schema = app.openapi()
+        self.assertNotIn("/api/models", schema["paths"])
+        components = schema["components"]["schemas"]
+        self.assertNotIn("model", components["ChatRequest"]["properties"])
+        self.assertNotIn("model", components["BotDraftRequest"]["properties"])
+
     def test_game_state_mutations_require_csrf(self):
         paths = app.openapi()["paths"]
         for path in (

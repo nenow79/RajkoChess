@@ -7,6 +7,7 @@ import BotCreator from "./BotCreator";
 import UserMenu from "./UserMenu";
 import type { AppMode, BotGame, BotProfile, PlayerColor, PlayerColorChoice } from "../types";
 import { getMyPlan, type PlanSummary } from "../admin/api";
+import { getAuthErrorMessage } from "../auth/api";
 
 interface BotGameModeProps {
   onModeChange: (mode: AppMode) => void;
@@ -17,9 +18,6 @@ interface CreatorState {
   mode: "create" | "edit";
   bot?: BotProfile;
 }
-
-const apiError = (error: unknown, fallback: string) =>
-  axios.isAxiosError<{ detail?: string }>(error) ? error.response?.data?.detail || fallback : fallback;
 
 const PROMOTION_OPTIONS: [PieceSymbol, string, string][] = [
   ["q", "Hetman", "♛"], ["r", "Wieża", "♜"], ["b", "Goniec", "♝"], ["n", "Skoczek", "♞"],
@@ -114,7 +112,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
         llm_commentary: llmCommentary,
       });
       setGame(res.data);
-    } catch (err) { setError(apiError(err, "Nie udało się rozpocząć partii.")); }
+    } catch (err) { setError(getAuthErrorMessage(err, "Nie udało się rozpocząć partii.")); }
     finally { setBusy(false); }
   };
 
@@ -127,7 +125,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
     setBusy(true); setError("");
     axios.post<BotGame>(`${API_URL}/bot-games/move`, { uci })
       .then(res => setGame(res.data))
-      .catch(err => setError(apiError(err, "Ruch został odrzucony.")))
+      .catch(err => setError(getAuthErrorMessage(err, "Ruch został odrzucony.")))
       .finally(() => setBusy(false));
     return true;
   };
@@ -160,7 +158,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
   const action = async (path: "draw-offer" | "resign") => {
     setBusy(true); setError("");
     try { const res = await axios.post<BotGame>(`${API_URL}/bot-games/${path}`); setGame(res.data); }
-    catch (err) { setError(apiError(err, "Operacja nie powiodła się.")); }
+    catch (err) { setError(getAuthErrorMessage(err, "Operacja nie powiodła się.")); }
     finally { setBusy(false); }
   };
 
@@ -182,7 +180,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
     try {
       await axios.post(`${API_URL}/bot-games/to-analysis`);
       onAnalyze(game);
-    } catch (err) { setError(apiError(err, "Nie udało się przekazać partii do analizy.")); setBusy(false); }
+    } catch (err) { setError(getAuthErrorMessage(err, "Nie udało się przekazać partii do analizy.")); setBusy(false); }
   };
 
   return (

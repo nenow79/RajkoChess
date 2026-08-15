@@ -22,6 +22,7 @@ class DatabaseSettingsTests(unittest.TestCase):
         self.assertEqual(database_url.username, "chess user")
         self.assertEqual(database_url.password, "secret/@value")
         self.assertEqual(database_url.database, "chess db")
+        self.assertEqual(database_url.query["connect_timeout"], "5")
         self.assertIn("secret%2F%40value", rendered_url)
         self.assertNotIn("secret/@value", rendered_url)
 

@@ -13,7 +13,8 @@ from auth.plans import (
     record_usage,
 )
 from auth.roles import is_admin
-from rate_limit import concurrency_slot, enforce_rate_limit
+from rate_limit import concurrency_slot, enforce_rate_limit, global_concurrency_slot
+from settings import get_settings
 
 
 OPERATIONAL_LIMITS = {
@@ -42,7 +43,26 @@ OPERATIONAL_LIMITS = {
         "premium": (240, 300),
         "admin": (300, 300),
     },
+    "chesscom_import": {
+        "free": (12, 300),
+        "premium": (30, 300),
+        "admin": (60, 300),
+    },
 }
+
+
+def global_concurrency_limit(group: str) -> int:
+    settings = get_settings()
+    limits = {
+        "engine": settings.global_engine_concurrency,
+        "full_analysis": settings.global_full_analysis_concurrency,
+        "llm": settings.global_llm_concurrency,
+        "external_api": settings.global_external_api_concurrency,
+    }
+    try:
+        return limits[group]
+    except KeyError as exc:
+        raise ValueError(f"Nieznana globalna grupa współbieżności: {group}") from exc
 
 
 @asynccontextmanager
@@ -87,7 +107,12 @@ async def limited_operation(
         identity=str(user.id),
         ttl_seconds=lock_ttl_seconds,
     ):
-        yield
+        async with global_concurrency_slot(
+            bucket=concurrency_group,
+            limit=global_concurrency_limit(concurrency_group),
+            ttl_seconds=lock_ttl_seconds,
+        ):
+            yield
 
     if monthly_key is not None:
         await record_usage(db, user=user, key=monthly_key)
