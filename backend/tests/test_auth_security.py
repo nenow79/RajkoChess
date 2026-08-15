@@ -101,6 +101,16 @@ class AuthSchemaTests(unittest.TestCase):
         self.assertNotIn("model", components["ChatRequest"]["properties"])
         self.assertNotIn("model", components["BotDraftRequest"]["properties"])
 
+    def test_llm_inputs_have_hard_size_limits(self):
+        components = app.openapi()["components"]["schemas"]
+        self.assertEqual(
+            components["ChatRequest"]["properties"]["message"]["maxLength"], 1000
+        )
+        self.assertEqual(
+            components["ImportGameRequest"]["properties"]["pgn"]["maxLength"],
+            200_000,
+        )
+
     def test_game_state_mutations_require_csrf(self):
         paths = app.openapi()["paths"]
         for path in (
@@ -111,6 +121,7 @@ class AuthSchemaTests(unittest.TestCase):
             "/api/imported-game/position",
             "/api/analyze-game",
             "/api/chat",
+            "/api/chat/translate",
             "/api/cancel-analysis",
             "/api/bot-games/start",
             "/api/bot-games/move",
@@ -118,11 +129,24 @@ class AuthSchemaTests(unittest.TestCase):
             "/api/bot-games/draw-offer",
             "/api/bot-games/to-analysis",
             "/api/bots/draft",
+            "/api/games/{game_id}/open",
         ):
             parameters = paths[path]["post"].get("parameters", [])
             self.assertTrue(
                 any(item["name"] == "X-CSRF-Token" for item in parameters), path
             )
+
+    def test_game_history_requires_session_and_never_accepts_owner_id(self):
+        paths = app.openapi()["paths"]
+        for path, method in (
+            ("/api/games", "get"),
+            ("/api/games/{game_id}", "get"),
+            ("/api/games/{game_id}/open", "post"),
+        ):
+            operation = paths[path][method]
+            self.assertIn({"SessionCookie": []}, operation.get("security", []))
+            parameters = operation.get("parameters", [])
+            self.assertFalse(any(item["name"] == "owner_id" for item in parameters))
 
     def test_game_state_key_comes_from_database_session_id(self):
         database_session_id = uuid.uuid4()

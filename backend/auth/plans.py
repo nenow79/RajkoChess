@@ -31,7 +31,7 @@ PLAN_DEFINITIONS = {
         key="premium",
         usage_limits={
             "ai_game_review": 30,
-            "ai_chat": 100,
+            "ai_chat": 50,
             "ai_bot_draft": 10,
             "ai_bot_commentary": 100,
         },

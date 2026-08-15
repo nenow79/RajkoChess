@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 
@@ -55,3 +56,22 @@ def resolve_opening(value: str) -> dict | None:
         return exact
     matches = search_openings(value, limit=2)
     return matches[0] if len(matches) == 1 else None
+
+
+@lru_cache(maxsize=4096)
+def _identify_opening(moves: tuple[str, ...]) -> dict | None:
+    """Return the longest catalog line matching the beginning of a game."""
+    best_match = None
+    best_length = 0
+    for item in get_openings():
+        line = item.get("uci")
+        if not isinstance(line, list) or len(line) <= best_length:
+            continue
+        if len(line) <= len(moves) and list(moves[: len(line)]) == line:
+            best_match = item
+            best_length = len(line)
+    return best_match
+
+
+def identify_opening(moves: Sequence[str]) -> dict | None:
+    return _identify_opening(tuple(moves))

@@ -1,8 +1,9 @@
 import unittest
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from auth.plans import (
     PLAN_DEFINITIONS,
@@ -10,7 +11,7 @@ from auth.plans import (
     effective_plan,
     ensure_monthly_quota,
 )
-from auth.limits import ensure_monthly_available
+from auth.limits import ensure_monthly_available, limited_operation
 from fastapi import HTTPException
 from db.models import PlanGrant, SystemRole, User
 from main import app
@@ -24,7 +25,7 @@ class PlanDefinitionTests(unittest.TestCase):
         self.assertEqual(free.usage_limits["ai_game_review"], 3)
         self.assertEqual(premium.usage_limits["ai_game_review"], 30)
         self.assertEqual(free.usage_limits["ai_chat"], 10)
-        self.assertEqual(premium.usage_limits["ai_chat"], 100)
+        self.assertEqual(premium.usage_limits["ai_chat"], 50)
         self.assertEqual(free.resource_limits["custom_bots"], 1)
         self.assertEqual(premium.resource_limits["custom_bots"], 10)
         self.assertEqual(free.usage_limits["ai_bot_commentary"], 0)
@@ -104,6 +105,44 @@ class EffectivePlanTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(error.exception.status_code, 429)
         self.assertIn("Premium", error.exception.detail)
+
+    async def test_limited_operation_persists_llm_usage_details(self):
+        @asynccontextmanager
+        async def available_slot(**_kwargs):
+            yield
+
+        db = AsyncMock()
+        user = User(id=uuid.uuid4(), email="metrics@example.com")
+        record = AsyncMock()
+        with (
+            patch(
+                "auth.limits.effective_plan",
+                new=AsyncMock(return_value=SimpleNamespace(key="free")),
+            ),
+            patch("auth.limits.enforce_rate_limit", new=AsyncMock()),
+            patch(
+                "auth.limits.ensure_monthly_quota",
+                new=AsyncMock(return_value=(0, 10)),
+            ),
+            patch("auth.limits.concurrency_slot", new=available_slot),
+            patch("auth.limits.global_concurrency_slot", new=available_slot),
+            patch("auth.limits.record_usage", new=record),
+        ):
+            async with limited_operation(
+                db,
+                user=user,
+                operation="ai_chat",
+                monthly_key="ai_chat",
+                concurrency_group="full_analysis",
+            ) as details:
+                details.update({"total_tokens": 150, "openrouter_cost_credits": 0.1})
+
+        record.assert_awaited_once_with(
+            db,
+            user=user,
+            key="ai_chat",
+            details={"total_tokens": 150, "openrouter_cost_credits": 0.1},
+        )
 
 
 if __name__ == "__main__":

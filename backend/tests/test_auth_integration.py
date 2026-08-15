@@ -97,6 +97,50 @@ class AuthenticationApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.status_code, 200, current.text)
         self.assertEqual(current.json()["email"], credentials["email"])
 
+        pgn = (
+            '[Event "Beta"]\n[Site "Local"]\n[Date "2026.08.15"]\n'
+            '[Round "1"]\n[White "Beta"]\n[Black "Tester"]\n'
+            '[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 1-0'
+        )
+        import_payload = {
+            "pgn": pgn,
+            "metadata": {
+                "id": "integration-game-1",
+                "source": "chesscom",
+                "opponent": "Tester",
+                "result": "1-0",
+                "played_at": "2026-08-15T12:00:00Z",
+            },
+        }
+        first_import = await self.client.post(
+            "/api/import-game",
+            json=import_payload,
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(first_import.status_code, 200, first_import.text)
+        game_id = first_import.json()["game_id"]
+
+        second_import = await self.client.post(
+            "/api/import-game",
+            json=import_payload,
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(second_import.status_code, 200, second_import.text)
+        self.assertEqual(second_import.json()["game_id"], game_id)
+
+        history = await self.client.get("/api/games")
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(len(history.json()["games"]), 1)
+        self.assertEqual(history.json()["games"][0]["opponent"], "Tester")
+
+        opened = await self.client.post(
+            f"/api/games/{game_id}/open",
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(opened.status_code, 200, opened.text)
+        self.assertEqual(opened.json()["game_id"], game_id)
+        self.assertEqual(opened.json()["metadata"]["opponent"], "Tester")
+
         logged_out = await self.client.post(
             "/api/auth/logout",
             headers={"X-CSRF-Token": csrf_token},

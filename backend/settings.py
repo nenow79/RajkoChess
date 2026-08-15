@@ -87,6 +87,33 @@ class Settings(BaseSettings):
         default=SecretStr("local-development-rate-limit-secret"),
         validation_alias="RATE_LIMIT_KEY_SECRET",
     )
+    openrouter_timeout_seconds: float = Field(
+        default=60,
+        ge=10,
+        le=180,
+        validation_alias="OPENROUTER_TIMEOUT_SECONDS",
+    )
+    openrouter_max_retries: int = Field(
+        default=1, ge=0, le=2, validation_alias="OPENROUTER_MAX_RETRIES"
+    )
+    openrouter_position_max_tokens: int = Field(
+        default=800,
+        ge=200,
+        le=1200,
+        validation_alias="OPENROUTER_POSITION_MAX_TOKENS",
+    )
+    openrouter_game_max_tokens: int = Field(
+        default=1200,
+        ge=400,
+        le=1800,
+        validation_alias="OPENROUTER_GAME_MAX_TOKENS",
+    )
+    openrouter_translation_max_tokens: int = Field(
+        default=1400,
+        ge=400,
+        le=1800,
+        validation_alias="OPENROUTER_TRANSLATION_MAX_TOKENS",
+    )
 
     @model_validator(mode="after")
     def validate_auth_cookie_settings(self) -> "Settings":

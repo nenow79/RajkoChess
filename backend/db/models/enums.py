@@ -17,6 +17,19 @@ class BotVisibility(str, Enum):
     PRIVATE = "private"
 
 
+class GameSource(str, Enum):
+    CHESSCOM = "chesscom"
+    BOT = "bot"
+    PGN = "pgn"
+
+
+class AnalysisStatus(str, Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class AuthTokenType(str, Enum):
     EMAIL_VERIFICATION = "email_verification"
     PASSWORD_RESET = "password_reset"

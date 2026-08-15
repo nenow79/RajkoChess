@@ -4,11 +4,14 @@ from io import StringIO
 import chess
 import chess.pgn
 
+MAX_IMPORTED_PLIES = 600
+
 
 class ChessGame:
     def __init__(self):
         self.board = chess.Board()
         self.imported_pgn = None
+        self.imported_game_id = None
         self.imported_metadata = None
         self.imported_moves = []
         self.current_ply = 0
@@ -28,6 +31,7 @@ class ChessGame:
                     self.in_variation = True
                 else:
                     self.imported_pgn = None
+                    self.imported_game_id = None
                     self.imported_metadata = None
                     self.imported_moves = []
                     self.current_ply = 0
@@ -46,6 +50,7 @@ class ChessGame:
                 self.in_variation = len(self.board.move_stack) > self.current_ply
             else:
                 self.imported_pgn = None
+                self.imported_game_id = None
                 self.imported_metadata = None
                 self.imported_moves = []
                 self.current_ply = 0
@@ -72,12 +77,15 @@ class ChessGame:
         """Resetuje szachownicę do pozycji startowej."""
         self.board.reset()
         self.imported_pgn = None
+        self.imported_game_id = None
         self.imported_metadata = None
         self.imported_moves = []
         self.current_ply = 0
         self.in_variation = False
 
-    def load_pgn(self, pgn: str, metadata: dict | None = None) -> dict:
+    def load_pgn(
+        self, pgn: str, metadata: dict | None = None, game_id: str | None = None
+    ) -> dict:
         """Loads a completed PGN and sets the board to its final position."""
         parsed_game = chess.pgn.read_game(StringIO(pgn))
         if parsed_game is None:
@@ -85,11 +93,16 @@ class ChessGame:
 
         board = parsed_game.board()
         moves = list(parsed_game.mainline_moves())
+        if len(moves) > MAX_IMPORTED_PLIES:
+            raise ValueError(
+                f"Partia może mieć maksymalnie {MAX_IMPORTED_PLIES} półruchów"
+            )
         for move in moves:
             board.push(move)
 
         self.board = board
         self.imported_pgn = pgn
+        self.imported_game_id = game_id
         self.imported_metadata = metadata or {}
         self.imported_moves = moves
         self.current_ply = len(moves)
@@ -149,6 +162,7 @@ class ChessGame:
             "history": self.get_history(),
             "headers": headers,
             "metadata": self.imported_metadata,
+            "game_id": self.imported_game_id,
             "current_ply": self.current_ply,
             "total_plies": len(self.imported_moves),
             "in_variation": self.in_variation,
@@ -166,4 +180,5 @@ class ChessGame:
         return {
             "pgn": self.imported_pgn,
             "metadata": self.imported_metadata or {},
+            "game_id": self.imported_game_id,
         }

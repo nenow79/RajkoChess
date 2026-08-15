@@ -1,5 +1,7 @@
 # main.py
 import asyncio
+import json
+import uuid
 
 import httpx
 from admin.router import router as admin_router
@@ -35,21 +37,40 @@ from chess_logic.bots import BotStore
 from chess_logic.chesscom import get_recent_games
 from chess_logic.engine import analyze_game, analyze_position
 from chess_logic.game import ChessGame
+from chess_logic.history import (
+    analysis_response,
+    game_response,
+    get_owned_game,
+    list_owned_games,
+    persist_imported_game,
+    record_completed_analysis,
+)
 from chess_logic.lichess import get_opening_explorer_data
 from chess_logic.llm_agent import (
+    FULL_GAME_ANALYSIS_MESSAGE,
+    LLMServiceError,
+    OUT_OF_SCOPE_MESSAGE,
     generate_bot_profile,
     generate_chess_analysis,
     generate_game_analysis,
     get_default_model,
+    is_chess_request,
+    is_full_game_analysis_request,
+    translate_analysis_to_english,
 )
-from chess_logic.openings import find_opening, resolve_opening, search_openings
-from db.models import BotVisibility
+from chess_logic.openings import (
+    find_opening,
+    identify_opening,
+    resolve_opening,
+    search_openings,
+)
+from db.models import BotVisibility, GameSource
 from db.session import database_healthcheck, get_db_session
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Path, Request, status
 from fastapi.middleware.cors import CORSMiddleware  # Dodany import
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from rate_limit import enforce_rate_limit, redis_healthcheck, request_ip
 
@@ -62,12 +83,19 @@ app.include_router(admin_router)
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(default="", max_length=4000)
+    message: str = Field(min_length=1, max_length=1000)
 
 
 class ImportGameRequest(BaseModel):
-    pgn: str = Field(min_length=1, max_length=2_000_000)
+    pgn: str = Field(min_length=1, max_length=200_000)
     metadata: dict | None = None
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata_size(cls, value: dict | None) -> dict | None:
+        if value is not None and len(json.dumps(value, ensure_ascii=False)) > 10_000:
+            raise ValueError("Metadane importu są zbyt duże")
+        return value
 
 
 class GamePositionRequest(BaseModel):
@@ -99,6 +127,7 @@ app.add_middleware(
 # Stan gry jest tymczasowo trzymany osobno dla każdej uwierzytelnionej sesji.
 games: dict[str, ChessGame] = {}
 active_analysis_tasks: dict[str, asyncio.Task] = {}
+last_ai_analyses: dict[str, str] = {}
 bot_games = BotGameManager()
 
 
@@ -468,13 +497,20 @@ async def get_explorer_stats(
             current_fen,
             max_moves=moves,
             ratings=ratings,
-            fallback_fens=game.get_ancestor_fens(),
+            fallback_opening=identify_opening(game.get_history()),
         )
         return data
     except httpx.HTTPStatusError as e:
+        if e.response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            retry_after = e.response.headers.get("Retry-After", "30")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Lichess Explorer chwilowo ograniczył liczbę zapytań.",
+                headers={"Retry-After": retry_after},
+            )
         raise HTTPException(
-            status_code=e.response.status_code,
-            detail=f"Błąd zewnętrznego API Lichess: {e.response.text}",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Lichess Explorer jest chwilowo niedostępny.",
         )
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Brak połączenia z Lichess API")
@@ -566,6 +602,7 @@ async def import_game(
     request: ImportGameRequest,
     game: ChessGame = Depends(get_game),
     current: CurrentAuth = Depends(require_csrf),
+    db: AsyncSession = Depends(get_db_session),
 ):
     try:
         metadata = {
@@ -573,7 +610,17 @@ async def import_game(
             for key, value in (request.metadata or {}).items()
             if key != "pgn"
         }
-        return game.load_pgn(request.pgn, metadata)
+        response = game.load_pgn(request.pgn, metadata)
+        stored = await persist_imported_game(
+            db,
+            user=current.user,
+            pgn=request.pgn,
+            metadata=metadata,
+        )
+        await db.commit()
+        game.imported_game_id = str(stored.id)
+        response["game_id"] = str(stored.id)
+        return response
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -599,6 +646,8 @@ async def analyze_imported_game(
     current: CurrentAuth = Depends(require_entitlement("ai_game_review", write=True)),
     db: AsyncSession = Depends(get_db_session),
 ):
+    if not is_chess_request(request.message):
+        raise HTTPException(status_code=400, detail=OUT_OF_SCOPE_MESSAGE)
     imported_game = game.get_imported_game()
     if not imported_game:
         raise HTTPException(
@@ -621,25 +670,43 @@ async def analyze_imported_game(
             monthly_key="ai_game_review",
             concurrency_group="full_analysis",
             lock_ttl_seconds=600,
-        ):
+        ) as usage_details:
             engine_data = await analyze_game(
                 imported_game["pgn"], time_limit=min(max(time_limit, 0.05), 1.0)
             )
-            response = await generate_game_analysis(
+            llm_result = await generate_game_analysis(
                 pgn=imported_game["pgn"],
                 engine_analysis=engine_data,
                 metadata=imported_game["metadata"],
                 user_prompt=request.message,
                 model=selected_model,
             )
+            usage_details.update(llm_result.usage)
+            raw_game_id = imported_game.get("game_id")
+            if not isinstance(raw_game_id, str):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Partia nie została trwale zapisana. Zaimportuj ją ponownie.",
+                )
+            analysis = await record_completed_analysis(
+                db,
+                user=current.user,
+                game_id=uuid.UUID(raw_game_id),
+                engine_result=engine_data,
+                coach_response=llm_result.text,
+            )
+        last_ai_analyses[session_id] = llm_result.text
         return {
-            "response": response,
+            "response": llm_result.text,
             "engine_analysis": engine_data,
+            "analysis_id": str(analysis.id),
         }
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Analiza została przerwana")
     except HTTPException:
         raise
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
     except Exception as e:  # noqa: BLE001 - normalize analysis pipeline failures
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -661,6 +728,15 @@ async def chat_with_agent(
     Endpoint analizy LLM. Zbiera dane z gry i zewnętrznych źródeł,
     przyjmując parametry czasu i głębokości silnika prosto z URL.
     """
+    if is_full_game_analysis_request(request.message):
+        detail = FULL_GAME_ANALYSIS_MESSAGE
+        if not game.get_imported_game():
+            detail = "Najpierw wybierz partię, a następnie użyj przycisku „Analizuj całą partię”."
+        return {"response": detail, "action": "use_game_review"}
+
+    if not is_chess_request(request.message):
+        raise HTTPException(status_code=400, detail=OUT_OF_SCOPE_MESSAGE)
+
     current_fen = game.get_fen()
     selected_model = get_default_model()
 
@@ -678,35 +754,83 @@ async def chat_with_agent(
             monthly_key="ai_chat",
             concurrency_group="full_analysis",
             lock_ttl_seconds=300,
-        ):
+        ) as usage_details:
             stockfish_data = await analyze_position(
                 current_fen,
                 time_limit=min(max(time_limit, 0.05), 2.0),
                 multipv=min(max(lines, 1), 5),
             )
-            lichess_data = await get_opening_explorer_data(
-                current_fen,
-                fallback_fens=game.get_ancestor_fens(),
-            )
-            analysis_text = await generate_chess_analysis(
+            fallback_opening = identify_opening(game.get_history())
+            try:
+                lichess_data = await get_opening_explorer_data(
+                    current_fen,
+                    fallback_opening=fallback_opening,
+                )
+            except (httpx.HTTPStatusError, httpx.RequestError):
+                lichess_data = {
+                    "fen": current_fen,
+                    "opening_name": fallback_opening.get("name")
+                    if fallback_opening
+                    else None,
+                    "opening_eco": fallback_opening.get("eco")
+                    if fallback_opening
+                    else None,
+                    "opening_is_fallback": bool(fallback_opening),
+                    "total_games_analyzed": 0,
+                    "top_moves": [],
+                }
+            llm_result = await generate_chess_analysis(
                 fen=current_fen,
                 lichess_data=lichess_data,
                 stockfish_data=stockfish_data,
                 user_prompt=request.message,
                 model=selected_model,
             )
+            usage_details.update(llm_result.usage)
 
-        return {"response": analysis_text}
+        last_ai_analyses[session_id] = llm_result.text
+        return {"response": llm_result.text}
 
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Analiza została przerwana")
     except HTTPException:
         raise
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
     except Exception as e:  # noqa: BLE001 - normalize chat pipeline failures
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if active_analysis_tasks.get(session_id) is current_task:
             active_analysis_tasks.pop(session_id, None)
+
+
+@app.post("/api/chat/translate")
+async def translate_chat_analysis(
+    session_id: str = Depends(get_session_id),
+    current: CurrentAuth = Depends(require_entitlement("ai_game_review", write=True)),
+    db: AsyncSession = Depends(get_db_session),
+):
+    source_analysis = last_ai_analyses.get(session_id)
+    if not source_analysis:
+        raise HTTPException(
+            status_code=409,
+            detail="Najpierw poproś RajkoAI o analizę szachową.",
+        )
+    try:
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="ai_chat",
+            monthly_key="ai_chat",
+            concurrency_group="full_analysis",
+            lock_ttl_seconds=180,
+        ) as usage_details:
+            llm_result = await translate_analysis_to_english(source_analysis[:10_000])
+            usage_details.update(llm_result.usage)
+            usage_details["operation"] = "translation_en"
+        return {"response": llm_result.text}
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.post("/api/cancel-analysis")
@@ -720,3 +844,59 @@ async def cancel_analysis(
 
     task.cancel()
     return {"cancelled": True}
+
+
+@app.get("/api/games")
+async def game_history(
+    limit: int = 30,
+    offset: int = 0,
+    source: GameSource | None = None,
+    current: CurrentAuth = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db_session),
+):
+    models = await list_owned_games(
+        db,
+        user=current.user,
+        limit=min(max(limit, 1), 100),
+        offset=max(offset, 0),
+        source=source,
+    )
+    return {"games": [game_response(model) for model in models]}
+
+
+@app.get("/api/games/{game_id}")
+async def game_history_detail(
+    game_id: uuid.UUID,
+    current: CurrentAuth = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db_session),
+):
+    model = await get_owned_game(
+        db, user=current.user, game_id=game_id, with_analyses=True
+    )
+    if model is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono partii")
+    analyses = sorted(model.analyses, key=lambda item: item.created_at, reverse=True)
+    return {
+        "game": game_response(model, include_pgn=True),
+        "analyses": [analysis_response(item) for item in analyses],
+    }
+
+
+@app.post("/api/games/{game_id}/open")
+async def open_historical_game(
+    game_id: uuid.UUID,
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
+    db: AsyncSession = Depends(get_db_session),
+):
+    model = await get_owned_game(db, user=current.user, game_id=game_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono partii")
+    response = game.load_pgn(
+        model.pgn,
+        model.metadata_json,
+        game_id=str(model.id),
+    )
+    response["pgn"] = model.pgn
+    response["source"] = model.source.value
+    return response

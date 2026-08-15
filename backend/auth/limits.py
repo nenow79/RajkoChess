@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from db.models import Bot, BotVisibility, User
 from fastapi import HTTPException, status
@@ -74,7 +74,7 @@ async def limited_operation(
     monthly_key: str | None = None,
     concurrency_group: str,
     lock_ttl_seconds: int = 300,
-) -> AsyncIterator[None]:
+) -> AsyncIterator[dict[str, Any]]:
     plan = await effective_plan(db, user=user)
     rate_plan = "admin" if is_admin(user) else plan.key
     try:
@@ -112,10 +112,13 @@ async def limited_operation(
             limit=global_concurrency_limit(concurrency_group),
             ttl_seconds=lock_ttl_seconds,
         ):
-            yield
+            usage_details: dict[str, Any] = {}
+            yield usage_details
 
     if monthly_key is not None:
-        await record_usage(db, user=user, key=monthly_key)
+        await record_usage(
+            db, user=user, key=monthly_key, details=usage_details
+        )
 
 
 async def ensure_custom_bot_capacity(db: AsyncSession, *, user: User) -> None:

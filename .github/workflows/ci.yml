@@ -61,6 +61,12 @@ jobs:
         run: |
           alembic upgrade head
           alembic check
+      - name: Validate operational scripts and PostgreSQL backup
+        run: |
+          bash -n deploy/deploy.sh deploy/backup-postgres.sh deploy/check-health.sh
+          BACKUP_DIR="$RUNNER_TEMP/rajko-chess-backups" \
+            BACKUP_RETENTION_DAYS=1 \
+            deploy/backup-postgres.sh
       - name: Check infrastructure integrations
         working-directory: backend
         run: |

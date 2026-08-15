@@ -1,5 +1,5 @@
 import os
-from collections.abc import Sequence
+from typing import Any
 
 import httpx
 
@@ -10,7 +10,7 @@ async def get_opening_explorer_data(
     fen: str,
     max_moves: int = 5,
     ratings: str | None = None,
-    fallback_fens: Sequence[str] = (),
+    fallback_opening: dict[str, Any] | None = None,
 ) -> dict:
     """
     Pobiera statystyki z Lichess Explorer API.
@@ -49,26 +49,10 @@ async def get_opening_explorer_data(
         opening_eco = opening_data.get("eco")
         opening_is_fallback = False
 
-        if not opening_name:
-            for fallback_fen in fallback_fens:
-                fallback_response = await client.get(
-                    LICHESS_EXPLORER_URL,
-                    headers=headers,
-                    params={
-                        "fen": fallback_fen,
-                        "moves": 1,
-                        "variant": "standard",
-                        "speeds": "blitz,rapid,classical",
-                    },
-                    timeout=5.0,
-                )
-                fallback_response.raise_for_status()
-                fallback_opening = fallback_response.json().get("opening") or {}
-                opening_name = fallback_opening.get("name")
-                opening_eco = fallback_opening.get("eco")
-                if opening_name:
-                    opening_is_fallback = True
-                    break
+        if not opening_name and fallback_opening:
+            opening_name = fallback_opening.get("name")
+            opening_eco = fallback_opening.get("eco")
+            opening_is_fallback = bool(opening_name)
 
         total_games = data.get("white", 0) + data.get("draws", 0) + data.get("black", 0)
         processed_moves = []

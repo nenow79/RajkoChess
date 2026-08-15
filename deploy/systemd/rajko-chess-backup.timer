@@ -1,0 +1,11 @@
+[Unit]
+Description=Codzienny backup PostgreSQL Rajko Chess
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=rajko-chess-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -3,6 +3,8 @@ from typing import cast
 
 from db.base import Base
 from db.models import (
+    Analysis,
+    AnalysisStatus,
     AuditLog,
     AuthSession,
     AuthToken,
@@ -10,6 +12,8 @@ from db.models import (
     Bot,
     BotVisibility,
     Entitlement,
+    Game,
+    GameSource,
     Identity,
     PlanGrant,
     SystemRole,
@@ -34,6 +38,8 @@ class AuthModelMetadataTests(unittest.TestCase):
                 "audit_log",
                 "plan_grants",
                 "usage_events",
+                "games",
+                "analyses",
             },
         )
 
@@ -74,6 +80,8 @@ class AuthModelMetadataTests(unittest.TestCase):
         status_type = mapper.columns.status.type
         role_type = mapper.columns.system_role.type
         token_type = inspect(AuthToken).columns.type.type
+        game_source_type = inspect(Game).columns.source.type
+        analysis_status_type = inspect(Analysis).columns.status.type
 
         self.assertIsInstance(status_type, Enum)
         self.assertEqual(
@@ -85,6 +93,21 @@ class AuthModelMetadataTests(unittest.TestCase):
         self.assertEqual(
             cast(Enum, token_type).enums, [item.value for item in AuthTokenType]
         )
+        self.assertEqual(
+            cast(Enum, game_source_type).enums, [item.value for item in GameSource]
+        )
+        self.assertEqual(
+            cast(Enum, analysis_status_type).enums,
+            [item.value for item in AnalysisStatus],
+        )
+
+    def test_games_are_idempotent_per_owner_and_external_source(self):
+        game_constraints = {
+            constraint.name for constraint in cast(Table, Game.__table__).constraints
+        }
+
+        self.assertIn("uq_games_owner_source_external", game_constraints)
+        self.assertIn("ck_games_pgn_length", game_constraints)
 
     def test_bot_visibility_requires_an_owner_only_for_private_bots(self):
         checks = {

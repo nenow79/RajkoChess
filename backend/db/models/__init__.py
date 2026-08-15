@@ -1,9 +1,18 @@
 from db.models.audit_log import AuditLog
+from db.models.analysis import Analysis
 from db.models.auth_session import AuthSession
 from db.models.auth_token import AuthToken
 from db.models.bot import Bot
 from db.models.entitlement import Entitlement
-from db.models.enums import AuthTokenType, BotVisibility, SystemRole, UserStatus
+from db.models.enums import (
+    AnalysisStatus,
+    AuthTokenType,
+    BotVisibility,
+    GameSource,
+    SystemRole,
+    UserStatus,
+)
+from db.models.game import Game
 from db.models.identity import Identity
 from db.models.plan_grant import PlanGrant
 from db.models.usage_event import UsageEvent
@@ -11,12 +20,16 @@ from db.models.user import User
 
 __all__ = [
     "AuditLog",
+    "Analysis",
+    "AnalysisStatus",
     "AuthSession",
     "AuthToken",
     "AuthTokenType",
     "Bot",
     "BotVisibility",
     "Entitlement",
+    "Game",
+    "GameSource",
     "Identity",
     "PlanGrant",
     "SystemRole",

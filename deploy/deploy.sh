@@ -10,6 +10,7 @@ VENV_DIR="$PROJECT_DIR/.venv"
 SERVICE_NAME="${SERVICE_NAME:-rajko-chess-backend.service}"
 WEB_ROOT="${WEB_ROOT:-/var/www/rajko-chess/chess}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8000/api/health}"
+BACKEND_ENV_FILE="${BACKEND_ENV_FILE:-/etc/rajko-chess/backend.env}"
 PULL_CHANGES=1
 
 usage() {
@@ -26,6 +27,7 @@ Zmienne środowiskowe:
   SERVICE_NAME  nazwa usługi systemd (domyślnie rajko-chess-backend.service)
   WEB_ROOT      katalog frontendu Nginx (domyślnie /var/www/rajko-chess/chess)
   HEALTH_URL    adres używany do kontroli API
+  BACKEND_ENV_FILE  produkcyjny plik env (domyślnie /etc/rajko-chess/backend.env)
 EOF
 }
 
@@ -42,7 +44,20 @@ log() {
   printf '\n==> %s\n' "$*"
 }
 
-for command in git python3 npm rsync curl sudo systemctl nginx; do
+load_backend_environment() {
+  if ! sudo test -r "$BACKEND_ENV_FILE"; then
+    echo "Brak czytelnej konfiguracji: $BACKEND_ENV_FILE" >&2
+    exit 1
+  fi
+
+  set -a
+  # Plik pozostaje własnością roota z trybem 0600; jego treść nie trafia do repo.
+  # shellcheck disable=SC1090
+  source <(sudo cat -- "$BACKEND_ENV_FILE")
+  set +a
+}
+
+for command in git python3 npm rsync curl sudo systemctl nginx pg_dump pg_restore; do
   command -v "$command" >/dev/null || {
     echo "Brak wymaganej komendy: $command" >&2
     exit 1
@@ -57,7 +72,7 @@ if ((PULL_CHANGES)); then
     exit 1
   fi
   log "Pobieranie i scalanie zmian z Git"
-  git pull --no-rebase
+  git pull --ff-only
 fi
 
 log "Przygotowanie środowiska backendu"
@@ -75,6 +90,7 @@ log "Testy backendu"
 
 log "Kontrola PostgreSQL i Redis"
 (
+  load_backend_environment
   cd "$PROJECT_DIR/backend"
   "$VENV_DIR/bin/python" -m scripts.check_database
   "$VENV_DIR/bin/python" -m scripts.check_redis
@@ -89,8 +105,13 @@ npm --prefix "$FRONTEND_DIR" run build
 log "Sprawdzanie konfiguracji Nginx"
 sudo nginx -t
 
+log "Backup PostgreSQL przed migracją"
+sudo ENV_FILE="$BACKEND_ENV_FILE" \
+  "$PROJECT_DIR/deploy/backup-postgres.sh"
+
 log "Aktualizacja schematu PostgreSQL"
 (
+  load_backend_environment
   cd "$PROJECT_DIR/backend"
   "$VENV_DIR/bin/alembic" upgrade head
 )

@@ -41,11 +41,33 @@ export interface ChessComGame {
 export interface ImportedGame {
   pgn: string;
   id?: string;
+  storedGameId?: string;
   color?: PlayerColor;
   opponent?: string;
   result?: string | null;
   bot?: BotProfile;
   [key: string]: unknown;
+}
+
+export interface StoredGameSummary {
+  id: string;
+  source: "chesscom" | "bot" | "pgn";
+  external_id: string | null;
+  played_at: string | null;
+  opponent: string | null;
+  result: string | null;
+  color: PlayerColor | null;
+  created_at: string;
+}
+
+export interface HistoricalGameOpen {
+  fen: string;
+  pgn: string;
+  metadata: Record<string, unknown>;
+  game_id: string;
+  current_ply: number;
+  total_plies: number;
+  move_label: string;
 }
 
 export interface ExplorerMove {

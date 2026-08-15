@@ -1,0 +1,12 @@
+[Unit]
+Description=Kontrola gotowości Rajko Chess
+After=rajko-chess-backend.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/Projekty/aplikacje/RajkoChess/deploy/check-health.sh
+Environment=HEALTH_URL=http://127.0.0.1:8000/api/health
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict

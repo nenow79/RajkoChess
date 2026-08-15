@@ -23,6 +23,9 @@ export default function ChessComPanel({
   const [draftUsername, setDraftUsername] = useState(username);
   const [isOpen, setIsOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const selectedChessComGame = importedGame && (
+    importedGame.source === "chesscom" || (importedGame.id && !importedGame.bot)
+  ) ? importedGame : null;
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -70,15 +73,15 @@ export default function ChessComPanel({
   return (
     <div className="side-panel chesscom-panel">
       <div className="chesscom-header">
-        <h3 className="panel-title">Chess.com{username ? ` · ${username}` : ""}</h3>
+        <h3 className="panel-title">Partie chess.com</h3>
         <button type="button" className="chesscom-open" onClick={() => setIsOpen(true)}>
           Wybierz partię
         </button>
       </div>
 
-      {importedGame && (
+      {selectedChessComGame && (
         <p className="chesscom-current-game">
-          Wybrano: {importedGame.color === "white" ? "białe" : "czarne"} vs {importedGame.opponent}
+          Wybrano: {selectedChessComGame.color === "white" ? "białe" : "czarne"} vs {selectedChessComGame.opponent}
         </p>
       )}
 
@@ -92,7 +95,7 @@ export default function ChessComPanel({
             onMouseDown={(event: MouseEvent<HTMLDivElement>) => event.stopPropagation()}
           >
             <div className="chesscom-modal-header">
-              <h2 id="chesscom-modal-title">Partie Chess.com</h2>
+              <h2 id="chesscom-modal-title">Partie chess.com</h2>
               <button
                 ref={closeButtonRef}
                 type="button"
@@ -136,7 +139,7 @@ export default function ChessComPanel({
                   <button
                     type="button"
                     key={game.id}
-                    className={`chesscom-game ${importedGame?.id === game.id ? "selected" : ""}`}
+                    className={`chesscom-game ${selectedChessComGame?.id === game.id ? "selected" : ""}`}
                     onClick={() => handleImport(game)}
                   >
                     <span className="chesscom-opponent">

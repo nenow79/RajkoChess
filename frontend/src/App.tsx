@@ -12,6 +12,7 @@ import { API_URL } from "./config";
 import BotGameMode from "./components/BotGameMode";
 import AuthScreen from "./components/AuthScreen";
 import UserMenu from "./components/UserMenu";
+import GameHistoryPanel from "./components/GameHistoryPanel";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { useAuth } from "./auth/useAuth";
@@ -23,6 +24,7 @@ import type {
   ExplorerData,
   GameAnalysis,
   GameNavigation,
+  HistoricalGameOpen,
   ImportedGame,
   PositionAnalysis,
   RatingRange,
@@ -46,6 +48,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [boardKey, setBoardKey] = useState(0);
 
   const [explorerData, setExplorerData] = useState<ExplorerData | null>(null);
+  const [explorerError, setExplorerError] = useState("");
   const [explorerRatingRange, setExplorerRatingRange] = useState({ min: 400, max: 2500 });
   const [analysisData, setAnalysisData] = useState<PositionAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -58,15 +61,17 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [gameAnalysis, setGameAnalysis] = useState<GameAnalysis | null>(null);
   const [navigationMove, setNavigationMove] = useState<string | null>(null);
   const [isVariationMode, setIsVariationMode] = useState(false);
+  const [historyRevision, setHistoryRevision] = useState(0);
 
   const fetchExplorerData = (ratingRange: RatingRange = explorerRatingRange) => {
     const ratings = LICHESS_RATING_BUCKETS
       .filter((rating) => rating >= ratingRange.min && rating <= ratingRange.max)
       .join(",");
 
+    setExplorerError("");
     axios.get(`${API_URL}/explorer`, { params: { ratings } })
       .then((res) => setExplorerData(res.data))
-      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się pobrać statystyk Lichess.")));
+      .catch((err) => setExplorerError(getAuthErrorMessage(err, "Nie udało się pobrać statystyk Lichess.")));
   };
 
   const handleExplorerRatingRangeChange = (range: RatingRange) => {
@@ -128,7 +133,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           metadata: { opponent: initialGame.bot?.name, result: initialGame.result, source: "bot" },
         })
       : axios.get(`${API_URL}/position`);
-    positionRequest
+    void positionRequest
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
@@ -138,6 +143,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             ...initialGame,
             pgn: initialGame.pgn,
             opponent: initialGame.bot?.name,
+            storedGameId: res.data.game_id,
           });
           setGameNavigation({
             currentPly: res.data.current_ply,
@@ -145,15 +151,18 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             moveLabel: res.data.move_label,
           });
           consumeInitialGameRef.current?.();
+          setHistoryRevision(prev => prev + 1);
         }
+        return Promise.allSettled([
+          axios.get(`${API_URL}/explorer`)
+            .then((explorerResponse) => setExplorerData(explorerResponse.data))
+            .catch((err) => setExplorerError(getAuthErrorMessage(err, "Nie udało się pobrać statystyk Lichess."))),
+          axios.get(`${API_URL}/analyze?time_limit=1.0&lines=3`)
+            .then((analysisResponse) => setAnalysisData(analysisResponse.data))
+            .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się przeanalizować pozycji."))),
+        ]);
       })
       .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się odtworzyć pozycji.")));
-    axios.get(`${API_URL}/explorer`)
-      .then((res) => setExplorerData(res.data))
-      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się pobrać statystyk Lichess.")));
-    axios.get(`${API_URL}/analyze?time_limit=1.0&lines=3`)
-      .then((res) => setAnalysisData(res.data))
-      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się przeanalizować pozycji.")));
   }, []); // The workspace is remounted when entering analysis mode.
 
   const handleImportGame = (selectedGame: ChessComGame) => {
@@ -165,7 +174,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
-        setImportedGame(selectedGame);
+        setImportedGame({ ...selectedGame, storedGameId: res.data.game_id });
         setGameAnalysis(null);
         setNavigationMove(null);
         setIsVariationMode(false);
@@ -175,6 +184,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           moveLabel: res.data.move_label,
         });
         fetchAllData();
+        setHistoryRevision(prev => prev + 1);
       })
       .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się zaimportować partii.")));
   };
@@ -274,27 +284,49 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się przejść do wybranego ruchu.")));
   };
 
+  const handleOpenHistoricalGame = (stored: HistoricalGameOpen) => {
+    gameRef.current = new Chess(stored.fen);
+    setFen(stored.fen);
+    setBoardKey(prev => prev + 1);
+    setImportedGame({
+      ...stored.metadata,
+      pgn: stored.pgn,
+      storedGameId: stored.game_id,
+    });
+    setGameAnalysis(null);
+    setNavigationMove(null);
+    setIsVariationMode(false);
+    setGameNavigation({
+      currentPly: stored.current_ply,
+      totalPlies: stored.total_plies,
+      moveLabel: stored.move_label,
+    });
+    fetchAllData();
+  };
+
   return (
     <div className="app-container">
 
-      {/* Globalny Nagłówek */}
-      <header className="app-header">
-        <h1>♞ Rajko Chess</h1>
-        <div className="header-actions">
-          <div className="mode-switch" aria-label="Tryb aplikacji">
-            <button className="active" type="button">Analiza</button>
-            <button type="button" onClick={() => onModeChange("game")}>Gra z botem</button>
+      <div className="workspace-top">
+        {/* Globalny Nagłówek */}
+        <header className="app-header">
+          <h1>♞ Rajko Chess</h1>
+          <div className="header-actions">
+            <div className="mode-switch" aria-label="Tryb aplikacji">
+              <button className="active" type="button">Analiza</button>
+              <button type="button" onClick={() => onModeChange("game")}>Gra z botem</button>
+            </div>
+            <UserMenu />
           </div>
-          <UserMenu />
-        </div>
-      </header>
+        </header>
 
-      {error && (
-        <div className="workspace-error" role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={() => setError("")} aria-label="Zamknij komunikat">×</button>
-        </div>
-      )}
+        {error && (
+          <div className="workspace-error" role="alert">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError("")} aria-label="Zamknij komunikat">×</button>
+          </div>
+        )}
+      </div>
 
       <div className="app-layout">
 
@@ -315,7 +347,6 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             pgn={importedGame?.pgn}
           />
           <ChessComPanel
-            key={chessComUsername}
             username={chessComUsername}
             games={chessComGames}
             isLoading={isLoadingChessCom}
@@ -324,14 +355,22 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             onRefresh={fetchChessComGames}
             onUsernameChange={handleChessComUsernameChange}
           />
+          <GameHistoryPanel
+            activeGameId={importedGame?.storedGameId}
+            refreshKey={historyRevision}
+            onOpen={handleOpenHistoricalGame}
+            onError={setError}
+          />
         </div>
 
         {/* Kolumna 2: Panele Lichess + Stockfish */}
         <div className="stats-col">
           <LichessExplorer
             data={explorerData}
+            error={explorerError}
             ratingRange={explorerRatingRange}
             onRatingRangeChange={handleExplorerRatingRangeChange}
+            onRetry={() => fetchExplorerData()}
           />
           <StockfishPanel data={analysisData} isAnalyzing={isAnalyzing} />
         </div>
@@ -341,7 +380,10 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           <LLMChatPanel
             importedGame={importedGame}
             playerUsername={chessComUsername}
-            onGameAnalyzed={setGameAnalysis}
+            onGameAnalyzed={(analysis) => {
+              setGameAnalysis(analysis);
+              setHistoryRevision(prev => prev + 1);
+            }}
           />
         </div>
 

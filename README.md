@@ -2,6 +2,11 @@
 
 Aplikacja webowa do analizy szachowej i gry ze spersonalizowanymi botami. Frontend działa w React/Vite, backend w FastAPI, ruchy i analizy oblicza lokalny Stockfish, a funkcje LLM korzystają z OpenRouter API.
 
+Wdrożenie zamkniętej bety na serwerze opisuje
+[`docs/DEPLOYMENT_CODEX.md`](docs/DEPLOYMENT_CODEX.md). Checklistę operacyjną,
+backup, monitoring i reakcję na incydenty zawiera
+[`docs/BETA_OPERATIONS.md`](docs/BETA_OPERATIONS.md).
+
 ## Funkcje
 
 - interaktywna szachownica z historią ruchów,
@@ -9,6 +14,7 @@ Aplikacja webowa do analizy szachowej i gry ze spersonalizowanymi botami. Fronte
 - statystyki debiutowe z Lichess Opening Explorer,
 - import ostatnich partii z Chess.com,
 - import i analiza zakończonej partii PGN,
+- prywatna historia zaimportowanych i rozegranych partii oraz zapisanych analiz,
 - czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha,
 - osobny tryb gry ze spersonalizowanymi botami o regulowanej sile, stylu i repertuarze,
 - opcjonalne komentarze LLM botów przy najważniejszych momentach partii,
@@ -79,7 +85,13 @@ identyfikatora modelu ani cen tokenów i nie pozwala klientowi wskazać modelu.
 `BOT_COMMENTARY_MODEL` wybiera model krótkich komentarzy w trybie gry z botem.
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
-Profile botów są przechowywane w PostgreSQL. Zwykły użytkownik widzi boty
+Profile botów, zakończone partie i pełne analizy są przechowywane w PostgreSQL.
+Każdy użytkownik widzi i otwiera wyłącznie własną historię. Ponowny import tej
+samej partii Chess.com aktualizuje istniejący zapis zamiast tworzyć duplikat.
+Pod szachownicą znajdują się dwa zwarte widgety: `Partie chess.com` otwiera
+okno wyboru partii z konta Chess.com, a `Moje partie z botami` pokazuje wyłącznie
+trwale zapisane partie rozegrane z botami Rajko Chess.
+Zwykły użytkownik widzi boty
 publiczne i własne prywatne; może tworzyć, edytować i usuwać wyłącznie własne
 boty prywatne. Botami publicznymi zarządza administrator. Aktywne partie nadal
 są trzymane w pamięci i kończą się przy restarcie backendu.
@@ -238,7 +250,7 @@ wykorzystanie miesięcznych limitów.
 | Funkcja | Free | Premium |
 |---|---:|---:|
 | Pełna analiza partii AI | 3/miesiąc | 30/miesiąc |
-| Pytania do trenera AI | 10/miesiąc | 100/miesiąc |
+| Pytania lub tłumaczenia trenera AI | 10/miesiąc | 50/miesiąc |
 | Generowanie bota przez AI | 1/miesiąc | 10/miesiąc |
 | Własne prywatne boty | 1 łącznie | 10 łącznie |
 | Komentarze AI podczas gry | wyłączone | 100/miesiąc |
@@ -249,6 +261,21 @@ nadal podlega limitom bezpieczeństwa i blokadom współbieżności.
 Liczniki Free i Premium są rozdzielone: przejście na Premium udostępnia pełny
 limit Premium, a późniejszy powrót do Free przywraca wcześniejsze zużycie Free z
 tego samego miesiąca.
+
+Czat RajkoAI przyjmuje najwyżej 1000 znaków i przed uruchomieniem Stockfisha,
+Lichess oraz OpenRouter odrzuca pytania bez rozpoznanego kontekstu szachowego.
+Odpowiedzi mają osobne limity tokenów dla pozycji, całej partii i tłumaczenia.
+Do modelu trafia oczyszczony PGN bez komentarzy i wariantów pobocznych oraz tylko
+dozwolone metadane. Przycisk `Translate EN` tłumaczy wyłącznie ostatnią odpowiedź
+RajkoAI zapamiętaną przez backend dla bieżącej sesji — klient nie może podstawić
+dowolnego tekstu. Zdarzenia użycia zapisują model, czas, tokeny i koszt zwrócony
+przez OpenRouter, jeśli dostawca poda go w odpowiedzi.
+Nagłówek panelu RajkoAI pokazuje osobno pozostałą liczbę pytań/tłumaczeń oraz
+pełnych analiz partii w bieżącym miesiącu i odświeża właściwy licznik po każdej
+operacji.
+Jeśli użytkownik wpisze w zwykłym czacie prośbę o analizę całej partii, backend
+bez zużywania limitu i bez uruchamiania silnika lub LLM kieruje go do przycisku
+`Analizuj całą partię`.
 
 ### Redis i rate limiting
 
@@ -333,9 +360,15 @@ pyright --project pyrightconfig.json
 
 Te same kontrole uruchamia workflow GitHub Actions w `.github/workflows/ci.yml`.
 Backendowy job korzysta z testowego PostgreSQL i Redis, stosuje migracje,
-uruchamia diagnostykę limitów oraz pełny przepływ rejestracji i sesji. Lokalnie
+uruchamia diagnostykę limitów oraz pełny przepływ rejestracji, sesji, importu i
+ponownego otwarcia zapisanej partii. Lokalnie
 test integracyjny bazy pozostaje pominięty, dopóki nie ustawisz jawnie
 `RUN_DATABASE_INTEGRATION_TESTS=1` dla osobnej bazy testowej.
+
+Procedury uruchomienia zamkniętej bety, monitoringu, backupu i odtworzenia bazy
+opisuje [`docs/BETA_OPERATIONS.md`](docs/BETA_OPERATIONS.md). Zasady udziału i
+robocza informacja o prywatności dla testerów są w katalogu
+[`docs/closed-beta`](docs/closed-beta).
 
 Opcjonalnie można zainstalować zależności developerskie i uruchomić testy przez pytest:
 
@@ -369,8 +402,10 @@ automatycznie:
 ```
 
 Skrypt pobiera i scala zmiany z Git, aktualizuje zależności, uruchamia testy
-backendu, sprawdza PostgreSQL, Redis i atomowe limity, wykonuje migracje, lint
-oraz build frontendu, a przed restartem API weryfikuje konfigurację Nginx.
+backendu, sprawdza PostgreSQL, Redis i atomowe limity, wykonuje sprawdzony backup
+PostgreSQL przed migracją, migracje, lint oraz build frontendu, a przed restartem
+API weryfikuje konfigurację Nginx. Serwer wymaga przez to również pakietu klienta
+PostgreSQL udostępniającego `pg_dump` i `pg_restore`.
 Wdrożenie kończy się błędem, jeśli `/api/health` nie potwierdzi zarówno
 PostgreSQL, jak i Redis. Aby wdrożyć bieżący lokalny kod bez wykonywania
 `git pull`, użyj `./deploy/deploy.sh --no-pull`.
@@ -398,15 +433,16 @@ sudo cp deploy/backend.env.example /etc/rajko-chess/backend.env
 
 Uzupełnij `/etc/rajko-chess/backend.env`, szczególnie `STOCKFISH_PATH`,
 `POSTGRES_*`, `REDIS_URL` i `RATE_LIMIT_KEY_SECRET` oraz opcjonalnie
-`OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`. Profile botów, plany oraz zdarzenia
-użycia są przechowywane w PostgreSQL. Redis obsługuje tylko krótkotrwałe
+`OPENROUTER_API_KEY` i `LICHESS_API_TOKEN`. Profile botów, plany, zdarzenia
+użycia, zakończone partie i analizy są przechowywane w PostgreSQL. Redis obsługuje tylko krótkotrwałe
 liczniki i blokady.
 Jeśli używasz LLM, ustaw też `OPENROUTER_HTTP_REFERER` na publiczny adres aplikacji, np. `https://rajko.pl/chess/`.
 
 Przykładowe pliki produkcyjne są w:
 
 - `deploy/nginx/rajko-chess.conf`,
-- `deploy/systemd/rajko-chess-backend.service`.
+- `deploy/systemd/rajko-chess-backend.service`,
+- `deploy/systemd/rajko-chess-{backup,health}.{service,timer}`.
 
 Konfiguracja nginx zakłada HTTPS przez certyfikat Let’s Encrypt dla `rajko.pl` i `www.rajko.pl`. Certyfikat możesz wystawić np. tak:
 

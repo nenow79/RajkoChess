@@ -5,11 +5,19 @@ const RATING_BUCKETS = [400, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500];
 
 interface LichessExplorerProps {
   data: ExplorerData | null;
+  error: string;
   ratingRange: RatingRange;
   onRatingRangeChange: (range: RatingRange) => void;
+  onRetry: () => void;
 }
 
-export default function LichessExplorer({ data, ratingRange, onRatingRangeChange }: LichessExplorerProps) {
+export default function LichessExplorer({
+  data,
+  error,
+  ratingRange,
+  onRatingRangeChange,
+  onRetry,
+}: LichessExplorerProps) {
   const updateRange = (key: keyof RatingRange, value: string) => {
     const nextRange = { ...ratingRange, [key]: Number(value) };
     if (key === "min" && nextRange.min > nextRange.max) nextRange.max = nextRange.min;
@@ -41,7 +49,12 @@ export default function LichessExplorer({ data, ratingRange, onRatingRangeChange
         </label>
       </div>
 
-      {!data ? (
+      {error ? (
+        <div className="explorer-error" role="status">
+          <span>{error}</span>
+          <button type="button" onClick={onRetry}>Spróbuj ponownie</button>
+        </div>
+      ) : !data ? (
         <p className="loading-text">Ładowanie statystyk...</p>
       ) : (
         <>
