@@ -13,6 +13,7 @@ import BotGameMode from "./components/BotGameMode";
 import AuthScreen from "./components/AuthScreen";
 import UserMenu from "./components/UserMenu";
 import GameHistoryPanel from "./components/GameHistoryPanel";
+import ManualImportPanel from "./components/ManualImportPanel";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { useAuth } from "./auth/useAuth";
@@ -41,6 +42,9 @@ interface AnalysisWorkspaceProps {
 }
 
 function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsumed }: AnalysisWorkspaceProps) {
+  const { platformAccounts } = useAuth();
+  const savedChessComUsername = platformAccounts.find((account) => account.provider === "chesscom")?.username || "";
+  const previousSavedChessComRef = useRef(savedChessComUsername);
   const initialBotGameRef = useRef(initialBotGame);
   const consumeInitialGameRef = useRef(onInitialBotGameConsumed);
   const gameRef = useRef(new Chess());
@@ -52,7 +56,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [explorerRatingRange, setExplorerRatingRange] = useState({ min: 400, max: 2500 });
   const [analysisData, setAnalysisData] = useState<PositionAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [chessComUsername, setChessComUsername] = useState("");
+  const [chessComUsername, setChessComUsername] = useState(savedChessComUsername);
   const [chessComGames, setChessComGames] = useState<ChessComGame[]>([]);
   const [isLoadingChessCom, setIsLoadingChessCom] = useState(false);
   const [error, setError] = useState("");
@@ -62,6 +66,15 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [navigationMove, setNavigationMove] = useState<string | null>(null);
   const [isVariationMode, setIsVariationMode] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
+
+  useEffect(() => {
+    setChessComUsername((current) => (
+      !current || current === previousSavedChessComRef.current
+        ? savedChessComUsername
+        : current
+    ));
+    previousSavedChessComRef.current = savedChessComUsername;
+  }, [savedChessComUsername]);
 
   const fetchExplorerData = (ratingRange: RatingRange = explorerRatingRange) => {
     const ratings = LICHESS_RATING_BUCKETS
@@ -304,6 +317,59 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
     fetchAllData();
   };
 
+  const handleManualImport = async (format: "pgn" | "fen", value: string) => {
+    setError("");
+    try {
+      if (format === "fen") {
+        const response = await axios.post<{ fen: string }>(`${API_URL}/import-position`, { fen: value });
+        gameRef.current = new Chess(response.data.fen);
+        setFen(response.data.fen);
+        setBoardKey(prev => prev + 1);
+        clearImportedGameContext();
+      } else {
+        const response = await axios.post(`${API_URL}/import-game`, {
+          pgn: value,
+          metadata: { source: "pgn" },
+        });
+        gameRef.current = new Chess(response.data.fen);
+        setFen(response.data.fen);
+        setBoardKey(prev => prev + 1);
+        const white = response.data.metadata?.white;
+        const black = response.data.metadata?.black;
+        setImportedGame({
+          ...response.data.metadata,
+          source: "pgn",
+          pgn: value,
+          opponent: white || black ? `${white || "?"} – ${black || "?"}` : undefined,
+          storedGameId: response.data.game_id,
+        });
+        setGameAnalysis(null);
+        setNavigationMove(null);
+        setIsVariationMode(false);
+        setGameNavigation({
+          currentPly: response.data.current_ply,
+          totalPlies: response.data.total_plies,
+          moveLabel: response.data.move_label,
+        });
+        setHistoryRevision(prev => prev + 1);
+      }
+      fetchAllData();
+    } catch (error) {
+      setError(getAuthErrorMessage(error, `Nie udało się zaimportować ${format.toUpperCase()}.`));
+      throw error;
+    }
+  };
+
+  const handleAnalysisMarkerChange = (hasAnalysis: boolean) => {
+    const externalId = importedGame?.id;
+    if (externalId) {
+      setChessComGames(current => current.map(game => (
+        game.id === externalId ? { ...game, has_analysis: hasAnalysis } : game
+      )));
+    }
+    setHistoryRevision(prev => prev + 1);
+  };
+
   return (
     <div className="app-container">
 
@@ -347,6 +413,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             pgn={importedGame?.pgn}
           />
           <ChessComPanel
+            key={savedChessComUsername}
             username={chessComUsername}
             games={chessComGames}
             isLoading={isLoadingChessCom}
@@ -355,9 +422,19 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             onRefresh={fetchChessComGames}
             onUsernameChange={handleChessComUsernameChange}
           />
+          <ManualImportPanel onImport={handleManualImport} />
           <GameHistoryPanel
             activeGameId={importedGame?.storedGameId}
             refreshKey={historyRevision}
+            onOpen={handleOpenHistoricalGame}
+            onError={setError}
+          />
+          <GameHistoryPanel
+            activeGameId={importedGame?.storedGameId}
+            refreshKey={historyRevision}
+            source="pgn"
+            title="Moje importy PGN"
+            emptyMessage="Ręcznie importowane partie PGN pojawią się tutaj."
             onOpen={handleOpenHistoricalGame}
             onError={setError}
           />
@@ -382,8 +459,9 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             playerUsername={chessComUsername}
             onGameAnalyzed={(analysis) => {
               setGameAnalysis(analysis);
-              setHistoryRevision(prev => prev + 1);
+              handleAnalysisMarkerChange(true);
             }}
+            onChatChanged={handleAnalysisMarkerChange}
           />
         </div>
 

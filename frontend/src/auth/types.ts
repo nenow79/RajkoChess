@@ -18,3 +18,9 @@ export interface RegisterCredentials extends LoginCredentials {
 }
 
 export type AuthStatus = "loading" | "authenticated" | "anonymous";
+
+export interface ChessPlatformAccount {
+  provider: string;
+  username: string;
+  updated_at: string;
+}

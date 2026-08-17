@@ -3,6 +3,8 @@ from db.models.analysis import Analysis
 from db.models.auth_session import AuthSession
 from db.models.auth_token import AuthToken
 from db.models.bot import Bot
+from db.models.chat_message import ChatMessage
+from db.models.chess_platform_account import ChessPlatformAccount
 from db.models.entitlement import Entitlement
 from db.models.enums import (
     AnalysisStatus,
@@ -27,6 +29,8 @@ __all__ = [
     "AuthTokenType",
     "Bot",
     "BotVisibility",
+    "ChatMessage",
+    "ChessPlatformAccount",
     "Entitlement",
     "Game",
     "GameSource",

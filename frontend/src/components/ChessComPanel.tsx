@@ -142,8 +142,11 @@ export default function ChessComPanel({
                     className={`chesscom-game ${selectedChessComGame?.id === game.id ? "selected" : ""}`}
                     onClick={() => handleImport(game)}
                   >
-                    <span className="chesscom-opponent">
-                      {game.color === "white" ? "Białe" : "Czarne"} vs {game.opponent}
+                    <span className="chesscom-game-heading">
+                      <span className="chesscom-opponent">
+                        {game.color === "white" ? "Białe" : "Czarne"} vs {game.opponent}
+                      </span>
+                      {game.has_analysis && <em className="analysis-badge">✦ Analiza</em>}
                     </span>
                     <span>
                       {game.result} · {game.time_class} · {game.rating} / {game.opponent_rating}

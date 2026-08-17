@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from db.models.auth_session import AuthSession
     from db.models.auth_token import AuthToken
     from db.models.bot import Bot
+    from db.models.chat_message import ChatMessage
+    from db.models.chess_platform_account import ChessPlatformAccount
     from db.models.game import Game
     from db.models.entitlement import Entitlement
     from db.models.identity import Identity
@@ -73,6 +75,12 @@ class User(UuidPrimaryKeyMixin, TimestampMixin, Base):
     )
     analyses: Mapped[list[Analysis]] = relationship(
         back_populates="owner", cascade="all, delete-orphan", passive_deletes=True
+    )
+    chat_messages: Mapped[list[ChatMessage]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan", passive_deletes=True
+    )
+    chess_platform_accounts: Mapped[list[ChessPlatformAccount]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", passive_deletes=True
     )
     entitlements: Mapped[list[Entitlement]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True

@@ -11,6 +11,8 @@ from db.models import (
     AuthTokenType,
     Bot,
     BotVisibility,
+    ChatMessage,
+    ChessPlatformAccount,
     Entitlement,
     Game,
     GameSource,
@@ -40,6 +42,8 @@ class AuthModelMetadataTests(unittest.TestCase):
                 "usage_events",
                 "games",
                 "analyses",
+                "chat_messages",
+                "chess_platform_accounts",
             },
         )
 
@@ -108,6 +112,24 @@ class AuthModelMetadataTests(unittest.TestCase):
 
         self.assertIn("uq_games_owner_source_external", game_constraints)
         self.assertIn("ck_games_pgn_length", game_constraints)
+
+    def test_chat_messages_are_owned_and_limited_to_supported_roles(self):
+        table = cast(Table, ChatMessage.__table__)
+        checks = {
+            constraint.name
+            for constraint in table.constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        self.assertIn("ck_chat_messages_role_allowed", checks)
+        self.assertIn("ck_chat_messages_kind_allowed", checks)
+        self.assertIn("ck_chat_messages_content_length", checks)
+        self.assertIn("ck_chat_messages_message_order_range", checks)
+
+    def test_platform_username_is_unique_per_user_and_provider(self):
+        table = cast(Table, ChessPlatformAccount.__table__)
+        constraints = {constraint.name for constraint in table.constraints}
+        self.assertIn("uq_chess_platform_accounts_user_provider", constraints)
+        self.assertIn("ck_chess_platform_accounts_provider_normalized", constraints)
 
     def test_bot_visibility_requires_an_owner_only_for_private_bots(self):
         checks = {

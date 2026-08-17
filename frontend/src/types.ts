@@ -35,6 +35,8 @@ export interface ChessComGame {
   opponent_rating: number;
   played_at: string | null;
   move_count: number | null;
+  stored_game_id?: string | null;
+  has_analysis?: boolean;
   [key: string]: unknown;
 }
 
@@ -57,6 +59,16 @@ export interface StoredGameSummary {
   opponent: string | null;
   result: string | null;
   color: PlayerColor | null;
+  created_at: string;
+  has_analysis: boolean;
+}
+
+export interface StoredChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  kind: "position" | "game_review" | "translation";
+  content: string;
+  fen: string | null;
   created_at: string;
 }
 

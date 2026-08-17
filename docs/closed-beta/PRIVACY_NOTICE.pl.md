@@ -17,8 +17,9 @@ Kontakt w sprawach prywatności: `[UZUPEŁNIJ adres e-mail]`.
   przechowuje hasła w postaci jawnej,
 - adres IP i dane techniczne wymagane do ochrony przed nadużyciem, diagnostyki
   oraz audytu działań administracyjnych,
-- importowane PGN-y, metadane partii, zapisane analizy, prywatne boty, pytania
-  kierowane do trenera AI i dane o wykorzystaniu limitów,
+- zapisane loginy platform szachowych, importowane PGN-y, metadane partii,
+  zapisane analizy, prywatne boty, pytania kierowane do trenera AI i dane o
+  wykorzystaniu limitów,
 - dobrowolne zgłoszenia błędów i opinie przekazane przez testera.
 
 ## Cele, podstawy i retencja

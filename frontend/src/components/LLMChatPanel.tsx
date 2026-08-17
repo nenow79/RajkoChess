@@ -3,7 +3,7 @@ import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_URL } from "../config";
-import type { GameAnalysis, ImportedGame } from "../types";
+import type { GameAnalysis, ImportedGame, StoredChatMessage } from "../types";
 import { getAuthErrorMessage } from "../auth/api";
 import { getMyPlan } from "../admin/api";
 
@@ -32,9 +32,10 @@ interface LLMChatPanelProps {
   importedGame: ImportedGame | null;
   playerUsername: string;
   onGameAnalyzed: (analysis: GameAnalysis) => void;
+  onChatChanged: (hasAnalysis: boolean) => void;
 }
 
-export default function LLMChatPanel({ importedGame, playerUsername, onGameAnalyzed }: LLMChatPanelProps) {
+export default function LLMChatPanel({ importedGame, playerUsername, onGameAnalyzed, onChatChanged }: LLMChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +46,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const analysisControllerRef = useRef<AbortController | null>(null);
+  const activeGameId = importedGame?.storedGameId;
 
   const loadAiQuotas = useCallback(() => {
     void getMyPlan()
@@ -72,6 +74,36 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   useEffect(() => {
     loadAiQuotas();
   }, [loadAiQuotas]);
+
+  useEffect(() => {
+    let active = true;
+    setMessages([WELCOME_MESSAGE]);
+    setLastPolishAnalysis(null);
+    if (!activeGameId) return () => { active = false; };
+
+    void axios.get<{ messages: StoredChatMessage[] }>(`${API_URL}/games/${activeGameId}/chat`)
+      .then((response) => {
+        if (!active) return;
+        const stored = response.data.messages;
+        setMessages(stored.length ? stored.map((message) => ({
+          role: message.role === "assistant" ? "bot" : "user",
+          text: message.kind === "translation"
+            ? `**English translation**\n\n${message.content}`
+            : message.content,
+        })) : [WELCOME_MESSAGE]);
+        const lastAnalysis = [...stored].reverse().find((message) => (
+          message.role === "assistant" && message.kind !== "translation"
+        ));
+        setLastPolishAnalysis(lastAnalysis?.content || null);
+      })
+      .catch((error) => {
+        if (active) setMessages([WELCOME_MESSAGE, {
+          role: "bot",
+          text: `❌ ${getAuthErrorMessage(error, "Nie udało się odtworzyć historii rozmowy.")}`,
+        }]);
+      });
+    return () => { active = false; };
+  }, [activeGameId]);
 
   // Automatyczne przewijanie czatu w dół przy nowej wiadomości
   const scrollToBottom = () => {
@@ -107,6 +139,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
       if (!res.data.action) {
         setLastPolishAnalysis(res.data.response);
         loadAiQuotas();
+        if (activeGameId) onChatChanged(true);
       }
     } catch (err) {
       if (axios.isCancel(err)) return;
@@ -124,9 +157,14 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   const handleAnalyzeGame = async () => {
     if (!importedGame || isLoading) return;
 
+    const isChessComGame = Boolean(importedGame.id && importedGame.source !== "pgn" && !importedGame.bot);
+    const gameLabel = importedGame.source === "pgn"
+      ? `zaimportowaną partię${importedGame.opponent ? ` ${importedGame.opponent}` : ""}`
+      : `partię przeciwko ${importedGame.opponent || "przeciwnikowi"}`;
+    const reviewPrompt = `Przeanalizuj całą ${gameLabel}${isChessComGame && playerUsername ? ` z perspektywy gracza ${playerUsername}` : ""}.`;
     setMessages(prev => [...prev, {
       role: "user",
-      text: `Przeanalizuj całą partię przeciwko ${importedGame.opponent}.`,
+      text: reviewPrompt,
     }]);
     setIsLoading(true);
     const controller = new AbortController();
@@ -134,7 +172,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
 
     try {
       const res = await axios.post<{ response: string; engine_analysis: GameAnalysis }>(`${API_URL}/analyze-game`, {
-        message: `Przeanalizuj całą partię z perspektywy ${playerUsername ? `gracza ${playerUsername}` : "użytkownika"}.`,
+        message: reviewPrompt,
       }, {
         signal: controller.signal,
       });
@@ -171,6 +209,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
         role: "bot",
         text: `**English translation**\n\n${res.data.response}`,
       }]);
+      if (activeGameId) onChatChanged(true);
       loadAiQuotas();
     } catch (err) {
       if (axios.isCancel(err)) return;
@@ -206,10 +245,29 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
     }
   };
 
-  const handleClear = () => {
-    setMessages([WELCOME_MESSAGE]);
-    setInput("");
-    setLastPolishAnalysis(null);
+  const handleClear = async () => {
+    if (isLoading) return;
+    if (!activeGameId) {
+      setMessages([WELCOME_MESSAGE]);
+      setInput("");
+      setLastPolishAnalysis(null);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const response = await axios.delete<{ cleared: boolean; has_analysis: boolean }>(`${API_URL}/games/${activeGameId}/chat`);
+      setMessages([WELCOME_MESSAGE]);
+      setInput("");
+      setLastPolishAnalysis(null);
+      onChatChanged(response.data.has_analysis);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        role: "bot",
+        text: `❌ ${getAuthErrorMessage(error, "Nie udało się wyczyścić historii rozmowy.")}`,
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

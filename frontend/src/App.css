@@ -82,6 +82,25 @@
 .plan-usage-popover > div b { white-space: nowrap; color: #416326; }
 .plan-usage-popover > small { display: block; margin-top: 8px; color: #7a6800; }
 
+.account-settings-overlay { position: fixed; z-index: 60; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(25,38,46,.7); }
+.account-settings-card { width: min(520px, 100%); padding: 24px; border-radius: 14px; background: #fff; box-shadow: 0 18px 60px rgba(0,0,0,.28); }
+.account-settings-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.account-settings-card h2 { margin: 0 0 6px; color: #263844; }
+.account-settings-card header p { margin: 0; color: #6d7b83; font-size: 12px; line-height: 1.45; }
+.account-settings-card header > button { border: 0; background: transparent; color: #52616b; cursor: pointer; font-size: 28px; line-height: 1; }
+.account-settings-form { display: flex; flex-direction: column; gap: 14px; margin-top: 22px; }
+.account-settings-form label { display: flex; flex-direction: column; gap: 6px; color: #34495e; font-size: 13px; font-weight: 800; }
+.account-settings-form input { box-sizing: border-box; width: 100%; padding: 10px 11px; border: 1px solid #bdc8cc; border-radius: 7px; color: #263844; font: inherit; }
+.account-settings-form input:focus { border-color: #7fa650; outline: 3px solid rgba(127,166,80,.16); }
+.account-settings-form small { color: #78868d; font-size: 10px; font-weight: 500; }
+.account-settings-error, .account-settings-success { margin: 0; padding: 9px 10px; border-radius: 5px; font-size: 12px; }
+.account-settings-error { background: #fff2f0; color: #9f3025; }
+.account-settings-success { background: #f1f8eb; color: #416326; }
+.account-settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.account-settings-actions button { padding: 9px 13px; border: 1px solid #9ba8af; border-radius: 6px; background: #fff; color: #52616b; cursor: pointer; font-weight: 700; }
+.account-settings-actions button[type="submit"] { border-color: #587d36; background: #587d36; color: #fff; }
+.account-settings-actions button:disabled { cursor: wait; opacity: .65; }
+
 /* Authentication */
 .auth-page { display: grid; min-height: 100dvh; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 10%, #eef4e8 0, #f8f9fa 42%, #edf1f3 100%); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .auth-card { width: min(430px, 100%); padding: 34px; border: 1px solid #dde4d7; border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 16px 50px rgba(43,60,50,.14); }
@@ -259,6 +278,79 @@
   background: #763a91;
 }
 
+.manual-import-panel .chesscom-header {
+  align-items: center;
+}
+
+.manual-import-panel .chesscom-header > div {
+  min-width: 0;
+}
+
+.manual-import-panel .panel-title {
+  margin-bottom: 4px;
+  border-color: #d68910;
+}
+
+.manual-import-panel small {
+  color: #7f8c8d;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.manual-import-panel .chesscom-open {
+  background: #d68910;
+}
+
+.manual-import-panel .chesscom-open:hover {
+  background: #b9770e;
+}
+
+.manual-import-modal {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.manual-import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manual-import-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #34495e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.manual-import-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid #bdc3c7;
+  border-radius: 6px;
+  color: #263844;
+  font: 12px/1.45 monospace;
+}
+
+.manual-import-form textarea:focus {
+  border-color: #d68910;
+  outline: 3px solid rgba(214, 137, 16, .14);
+}
+
+.manual-import-form p {
+  margin: 0;
+  color: #6f7d84;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.manual-import-form > .chesscom-user-submit {
+  align-self: flex-end;
+}
+
 .game-history-modal .game-history-list {
   max-height: min(620px, calc(100dvh - 120px));
 }
@@ -313,6 +405,21 @@
 .game-history-list time {
   color: #7f8c8d;
   font-size: 10px;
+}
+
+.analysis-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  margin-top: 3px;
+  padding: 2px 6px;
+  border-radius: 9px;
+  background: #f3e8f8;
+  color: #7d3c98;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .game-history-list time {
@@ -1142,6 +1249,18 @@
 
 .chesscom-game span {
   min-width: 0;
+}
+
+.chesscom-game-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chesscom-game-heading .analysis-badge {
+  flex: 0 0 auto;
+  margin-top: 0;
 }
 
 .chesscom-game:hover,

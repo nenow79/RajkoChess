@@ -1,7 +1,9 @@
 import os
 import unittest
+import uuid
 from unittest.mock import AsyncMock, patch
 
+from db.models import ChatMessage
 from db.session import get_db_session, get_engine
 from httpx import ASGITransport, AsyncClient
 from main import app
@@ -97,6 +99,18 @@ class AuthenticationApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.status_code, 200, current.text)
         self.assertEqual(current.json()["email"], credentials["email"])
 
+        saved_platform = await self.client.put(
+            "/api/auth/platform-accounts/chesscom",
+            json={"username": "Beta_Player"},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(saved_platform.status_code, 200, saved_platform.text)
+        self.assertEqual(saved_platform.json()["username"], "Beta_Player")
+        platform_accounts = await self.client.get("/api/auth/platform-accounts")
+        self.assertEqual(
+            platform_accounts.json()["accounts"][0]["provider"], "chesscom"
+        )
+
         pgn = (
             '[Event "Beta"]\n[Site "Local"]\n[Date "2026.08.15"]\n'
             '[Round "1"]\n[White "Beta"]\n[Black "Tester"]\n'
@@ -132,6 +146,48 @@ class AuthenticationApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history.status_code, 200, history.text)
         self.assertEqual(len(history.json()["games"]), 1)
         self.assertEqual(history.json()["games"][0]["opponent"], "Tester")
+        self.assertFalse(history.json()["games"][0]["has_analysis"])
+
+        self.db.add_all(
+            [
+                ChatMessage(
+                    owner_id=uuid.UUID(current.json()["id"]),
+                    game_id=uuid.UUID(game_id),
+                    role="user",
+                    kind="position",
+                    content="Jaki jest plan w tej pozycji?",
+                    fen=first_import.json()["fen"],
+                ),
+                ChatMessage(
+                    owner_id=uuid.UUID(current.json()["id"]),
+                    game_id=uuid.UUID(game_id),
+                    role="assistant",
+                    kind="position",
+                    content="Rozwijaj figury i walcz o centrum.",
+                    fen=first_import.json()["fen"],
+                ),
+            ]
+        )
+        await self.db.commit()
+
+        chat_history = await self.client.get(f"/api/games/{game_id}/chat")
+        self.assertEqual(chat_history.status_code, 200, chat_history.text)
+        self.assertEqual(len(chat_history.json()["messages"]), 2)
+        self.assertEqual(chat_history.json()["messages"][1]["role"], "assistant")
+
+        history_with_chat = await self.client.get("/api/games")
+        self.assertTrue(history_with_chat.json()["games"][0]["has_analysis"])
+
+        cleared_chat = await self.client.delete(
+            f"/api/games/{game_id}/chat",
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(cleared_chat.status_code, 200, cleared_chat.text)
+        self.assertFalse(cleared_chat.json()["has_analysis"])
+        self.assertEqual(
+            (await self.client.get(f"/api/games/{game_id}/chat")).json()["messages"],
+            [],
+        )
 
         opened = await self.client.post(
             f"/api/games/{game_id}/open",

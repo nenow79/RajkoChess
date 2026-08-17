@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from db.models import Analysis, AnalysisStatus, Game, GameSource, User
-from sqlalchemy import select
+from db.models import Analysis, AnalysisStatus, ChatMessage, Game, GameSource, User
+from sqlalchemy import select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -111,21 +111,65 @@ async def get_owned_game(
 ) -> Game | None:
     statement = select(Game).where(Game.id == game_id, Game.owner_id == user.id)
     if with_analyses:
-        statement = statement.options(selectinload(Game.analyses))
+        statement = statement.options(
+            selectinload(Game.analyses), selectinload(Game.chat_messages)
+        )
     return await db.scalar(statement)
 
 
-def game_response(model: Game, *, include_pgn: bool = False) -> dict[str, Any]:
+async def get_owned_games_by_external_ids(
+    db: AsyncSession,
+    *,
+    user: User,
+    source: GameSource,
+    external_ids: list[str],
+) -> dict[str, Game]:
+    if not external_ids:
+        return {}
+    models = await db.scalars(
+        select(Game)
+        .where(
+            Game.owner_id == user.id,
+            Game.source == source,
+            Game.external_id.in_(external_ids),
+        )
+    )
+    return {model.external_id: model for model in models if model.external_id}
+
+
+async def games_with_analysis_activity(
+    db: AsyncSession, *, user: User, game_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    if not game_ids:
+        return set()
+    statement = union(
+        select(Analysis.game_id).where(
+            Analysis.owner_id == user.id, Analysis.game_id.in_(game_ids)
+        ),
+        select(ChatMessage.game_id).where(
+            ChatMessage.owner_id == user.id, ChatMessage.game_id.in_(game_ids)
+        ),
+    )
+    return set(await db.scalars(statement))
+
+
+def game_response(
+    model: Game, *, include_pgn: bool = False, has_analysis: bool = False
+) -> dict[str, Any]:
     metadata = model.metadata_json
+    opponent = metadata.get("opponent") or metadata.get("bot_name")
+    if not opponent and (metadata.get("white") or metadata.get("black")):
+        opponent = f"{metadata.get('white') or '?'} – {metadata.get('black') or '?'}"
     response: dict[str, Any] = {
         "id": str(model.id),
         "source": model.source.value,
         "external_id": model.external_id,
         "played_at": model.played_at.isoformat() if model.played_at else None,
-        "opponent": metadata.get("opponent") or metadata.get("bot_name"),
+        "opponent": opponent,
         "result": metadata.get("result"),
         "color": metadata.get("color"),
         "created_at": model.created_at.isoformat(),
+        "has_analysis": has_analysis,
     }
     if include_pgn:
         response.update({"pgn": model.pgn, "metadata": metadata})

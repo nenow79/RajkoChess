@@ -23,6 +23,7 @@ from db.models.enums import GameSource, enum_values
 
 if TYPE_CHECKING:
     from db.models.analysis import Analysis
+    from db.models.chat_message import ChatMessage
     from db.models.user import User
 
 
@@ -59,5 +60,8 @@ class Game(UuidPrimaryKeyMixin, TimestampMixin, Base):
 
     owner: Mapped[User] = relationship(back_populates="games")
     analyses: Mapped[list[Analysis]] = relationship(
+        back_populates="game", cascade="all, delete-orphan", passive_deletes=True
+    )
+    chat_messages: Mapped[list[ChatMessage]] = relationship(
         back_populates="game", cascade="all, delete-orphan", passive_deletes=True
     )

@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import { API_URL } from "../config";
-import type { AuthUser, LoginCredentials, RegisterCredentials } from "./types";
+import type { AuthUser, ChessPlatformAccount, LoginCredentials, RegisterCredentials } from "./types";
 
 interface LoginResponse {
   user: AuthUser;
@@ -48,6 +48,23 @@ export const confirmPasswordReset = (token: string, password: string) =>
 
 export const getCsrfToken = () =>
   authApi.get<CsrfResponse>("/csrf").then((response) => response.data.csrf_token);
+
+export const getPlatformAccounts = () =>
+  axios.get<{ accounts: ChessPlatformAccount[] }>(`${API_URL}/auth/platform-accounts`, {
+    withCredentials: true,
+  })
+    .then((response) => response.data.accounts);
+
+export const savePlatformAccount = (provider: string, username: string) =>
+  axios.put<ChessPlatformAccount>(`${API_URL}/auth/platform-accounts/${provider}`, { username }, {
+    withCredentials: true,
+  })
+    .then((response) => response.data);
+
+export const deletePlatformAccount = (provider: string) =>
+  axios.delete(`${API_URL}/auth/platform-accounts/${provider}`, {
+    withCredentials: true,
+  });
 
 export const logoutUser = (csrfToken: string) =>
   authApi.post("/logout", null, {

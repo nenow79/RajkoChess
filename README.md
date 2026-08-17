@@ -14,7 +14,8 @@ backup, monitoring i reakcję na incydenty zawiera
 - statystyki debiutowe z Lichess Opening Explorer,
 - import ostatnich partii z Chess.com,
 - import i analiza zakończonej partii PGN,
-- prywatna historia zaimportowanych i rozegranych partii oraz zapisanych analiz,
+- prywatna historia zaimportowanych i rozegranych partii, zapisanych analiz oraz
+  rozmów RajkoAI przypisanych do konkretnej partii,
 - czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha,
 - osobny tryb gry ze spersonalizowanymi botami o regulowanej sile, stylu i repertuarze,
 - opcjonalne komentarze LLM botów przy najważniejszych momentach partii,
@@ -26,7 +27,11 @@ backup, monitoring i reakcję na incydenty zawiera
 
 ### Analiza
 
-Udostępnia obecną szachownicę analityczną, MultiPV Stockfisha, Lichess Opening Explorer, import partii Chess.com i trenera RajkoAI. Zaimportowane partie można przewijać, analizować w całości i rozgrywać od nich własne warianty.
+Udostępnia obecną szachownicę analityczną, MultiPV Stockfisha, Lichess Opening Explorer, import partii Chess.com, ręczny import PGN/FEN i trenera RajkoAI. Zaimportowane partie można przewijać, analizować w całości i rozgrywać od nich własne warianty. Rozmowa dotycząca zapisanej partii jest odtwarzana po jej ponownym otwarciu.
+
+W ustawieniach konta użytkownik może zapisać domyślny login Chess.com. Login
+automatycznie wypełnia formularz importu, ale może zostać jednorazowo zmieniony.
+Ustawienie nie oznacza zweryfikowanego połączenia ani dostępu do konta Chess.com.
 
 ### Gra z botem
 
@@ -85,7 +90,8 @@ identyfikatora modelu ani cen tokenów i nie pozwala klientowi wskazać modelu.
 `BOT_COMMENTARY_MODEL` wybiera model krótkich komentarzy w trybie gry z botem.
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
-Profile botów, zakończone partie i pełne analizy są przechowywane w PostgreSQL.
+Profile botów, zakończone partie, pełne analizy i rozmowy RajkoAI przypisane do
+partii są przechowywane w PostgreSQL.
 Każdy użytkownik widzi i otwiera wyłącznie własną historię. Ponowny import tej
 samej partii Chess.com aktualizuje istniejący zapis zamiast tworzyć duplikat.
 Pod szachownicą znajdują się dwa zwarte widgety: `Partie chess.com` otwiera

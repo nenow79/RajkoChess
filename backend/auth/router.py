@@ -4,7 +4,7 @@ from typing import Annotated
 
 from db.models import UserStatus
 from db.session import get_db_session
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from rate_limit import clear_rate_limit, enforce_rate_limit, request_ip
 
@@ -17,6 +17,12 @@ from auth.email import (
 )
 from auth.policies import all_effective_entitlements
 from auth.plans import plan_summary
+from auth.platform_accounts import (
+    delete_platform_account,
+    list_platform_accounts,
+    platform_account_response,
+    upsert_platform_account,
+)
 from auth.schemas import (
     CsrfResponse,
     EmailVerificationRequest,
@@ -27,6 +33,8 @@ from auth.schemas import (
     MessageResponse,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
+    PlatformAccountRequest,
+    PlatformAccountResponse,
     RegisterRequest,
     UserResponse,
 )
@@ -315,6 +323,53 @@ async def current_plan(
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ):
     return await plan_summary(db, user=current.user)
+
+
+@router.get("/platform-accounts")
+async def platform_accounts(
+    current: Annotated[CurrentAuth, Depends(get_current_auth)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    models = await list_platform_accounts(db, user=current.user)
+    return {"accounts": [platform_account_response(model) for model in models]}
+
+
+@router.put(
+    "/platform-accounts/{provider}", response_model=PlatformAccountResponse
+)
+async def save_platform_account(
+    payload: PlatformAccountRequest,
+    provider: Annotated[
+        str, Path(min_length=1, max_length=32, pattern=r"^[a-z0-9_-]+$")
+    ],
+    current: Annotated[CurrentAuth, Depends(require_csrf)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    try:
+        model = await upsert_platform_account(
+            db,
+            user=current.user,
+            provider=provider,
+            username=payload.username,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return platform_account_response(model)
+
+
+@router.delete("/platform-accounts/{provider}", response_model=MessageResponse)
+async def remove_platform_account(
+    provider: Annotated[
+        str, Path(min_length=1, max_length=32, pattern=r"^[a-z0-9_-]+$")
+    ],
+    current: Annotated[CurrentAuth, Depends(require_csrf)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> MessageResponse:
+    try:
+        await delete_platform_account(db, user=current.user, provider=provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return MessageResponse(message="Usunięto zapisany login platformy")
 
 
 def secrets_compare_hash(secret: str, expected_hash: bytes) -> bool:

@@ -91,3 +91,13 @@ class LogoutResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class PlatformAccountRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=80)
+
+
+class PlatformAccountResponse(BaseModel):
+    provider: str
+    username: str
+    updated_at: datetime

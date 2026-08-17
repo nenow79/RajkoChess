@@ -10,6 +10,9 @@ interface GameHistoryPanelProps {
   refreshKey: number;
   onOpen: (game: HistoricalGameOpen) => void;
   onError: (message: string) => void;
+  source?: StoredGameSummary["source"];
+  title?: string;
+  emptyMessage?: string;
 }
 
 function formatDate(value: string | null, fallback: string) {
@@ -26,6 +29,9 @@ export default function GameHistoryPanel({
   refreshKey,
   onOpen,
   onError,
+  source = "bot",
+  title = "Moje partie z botami",
+  emptyMessage = "Zakończone partie z botami pojawią się tutaj.",
 }: GameHistoryPanelProps) {
   const [games, setGames] = useState<StoredGameSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,7 +42,7 @@ export default function GameHistoryPanel({
   useEffect(() => {
     let active = true;
     axios.get<{ games: StoredGameSummary[] }>(`${API_URL}/games`, {
-      params: { limit: 30, source: "bot" },
+      params: { limit: 30, source },
     })
       .then((response) => {
         if (active) setGames(response.data.games);
@@ -48,7 +54,7 @@ export default function GameHistoryPanel({
         if (active) setIsLoading(false);
       });
     return () => { active = false; };
-  }, [refreshKey, onError]);
+  }, [refreshKey, onError, source]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -83,7 +89,7 @@ export default function GameHistoryPanel({
   return (
     <section className="side-panel game-history-panel">
       <div className="chesscom-header">
-        <h3 className="panel-title">Moje partie z botami</h3>
+        <h3 className="panel-title">{title}</h3>
         <button type="button" className="chesscom-open" onClick={() => setIsOpen(true)}>
           Wybierz partię
         </button>
@@ -91,7 +97,7 @@ export default function GameHistoryPanel({
 
       {activeGame && (
         <p className="chesscom-current-game">
-          Wybrano: vs {activeGame.opponent || "bot"}
+          Wybrano: {activeGame.opponent || (source === "bot" ? "partia z botem" : "import PGN")}
         </p>
       )}
 
@@ -101,11 +107,11 @@ export default function GameHistoryPanel({
             className="chesscom-modal game-history-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="bot-history-modal-title"
+            aria-labelledby={`${source}-history-modal-title`}
             onMouseDown={(event: MouseEvent<HTMLDivElement>) => event.stopPropagation()}
           >
             <div className="chesscom-modal-header">
-              <h2 id="bot-history-modal-title">Moje partie z botami</h2>
+              <h2 id={`${source}-history-modal-title`}>{title}</h2>
               <button
                 ref={closeButtonRef}
                 type="button"
@@ -118,9 +124,9 @@ export default function GameHistoryPanel({
             </div>
 
             {isLoading ? (
-              <p className="loading-text">Pobieram partie z botami…</p>
+              <p className="loading-text">Pobieram zapisane partie…</p>
             ) : games.length === 0 ? (
-              <p className="loading-text">Zakończone partie z botami pojawią się tutaj.</p>
+              <p className="loading-text">{emptyMessage}</p>
             ) : (
               <div className="game-history-list">
                 {games.map((game) => (
@@ -132,8 +138,9 @@ export default function GameHistoryPanel({
                     onClick={() => openGame(game.id)}
                   >
                     <span>
-                      <strong>{game.opponent ? `vs ${game.opponent}` : "Partia z botem"}</strong>
-                      <small>{game.result || "Bot"}</small>
+                      <strong>{game.opponent || (source === "bot" ? "Partia z botem" : "Import PGN")}</strong>
+                      <small>{game.result || (source === "bot" ? "Bot" : "PGN")}</small>
+                      {game.has_analysis && <em className="analysis-badge">✦ Analiza</em>}
                     </span>
                     <time>{formatDate(game.played_at, formatDate(game.created_at, ""))}</time>
                   </button>

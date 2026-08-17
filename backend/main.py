@@ -37,10 +37,19 @@ from chess_logic.bots import BotStore
 from chess_logic.chesscom import get_recent_games
 from chess_logic.engine import analyze_game, analyze_position
 from chess_logic.game import ChessGame
+from chess_logic.chat_history import (
+    add_chat_messages,
+    chat_message_response,
+    clear_chat_messages,
+    latest_translatable_analysis,
+    list_chat_messages,
+)
 from chess_logic.history import (
     analysis_response,
     game_response,
     get_owned_game,
+    get_owned_games_by_external_ids,
+    games_with_analysis_activity,
     list_owned_games,
     persist_imported_game,
     record_completed_analysis,
@@ -96,6 +105,10 @@ class ImportGameRequest(BaseModel):
         if value is not None and len(json.dumps(value, ensure_ascii=False)) > 10_000:
             raise ValueError("Metadane importu są zbyt duże")
         return value
+
+
+class ImportPositionRequest(BaseModel):
+    fen: str = Field(min_length=1, max_length=128)
 
 
 class GamePositionRequest(BaseModel):
@@ -158,6 +171,21 @@ def get_game(session_id: str = Depends(get_session_id)) -> ChessGame:
     if session_id not in games:
         games[session_id] = ChessGame()
     return games[session_id]
+
+
+async def current_owned_game_id(
+    db: AsyncSession, *, game: ChessGame, current: CurrentAuth
+) -> uuid.UUID | None:
+    imported = game.get_imported_game()
+    raw_game_id = imported.get("game_id") if imported else None
+    if not isinstance(raw_game_id, str):
+        return None
+    try:
+        game_id = uuid.UUID(raw_game_id)
+    except ValueError:
+        return None
+    stored = await get_owned_game(db, user=current.user, game_id=game_id)
+    return stored.id if stored else None
 
 
 @app.get("/api/bots")
@@ -584,10 +612,29 @@ async def chesscom_recent_games(
             concurrency_group="external_api",
             lock_ttl_seconds=30,
         ):
-            return {
-                "username": username,
-                "games": await get_recent_games(username, min(max(limit, 1), 30)),
-            }
+            recent_games = await get_recent_games(username, min(max(limit, 1), 30))
+            stored_by_external_id = await get_owned_games_by_external_ids(
+                db,
+                user=current.user,
+                source=GameSource.CHESSCOM,
+                external_ids=[
+                    str(item["id"])
+                    for item in recent_games
+                    if item.get("id")
+                ],
+            )
+            activity_game_ids = await games_with_analysis_activity(
+                db,
+                user=current.user,
+                game_ids=[item.id for item in stored_by_external_id.values()],
+            )
+            for item in recent_games:
+                stored = stored_by_external_id.get(str(item.get("id")))
+                item["stored_game_id"] = str(stored.id) if stored else None
+                item["has_analysis"] = bool(
+                    stored and stored.id in activity_game_ids
+                )
+            return {"username": username, "games": recent_games}
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=e.response.status_code,
@@ -611,6 +658,14 @@ async def import_game(
             if key != "pgn"
         }
         response = game.load_pgn(request.pgn, metadata)
+        if metadata.get("source") == GameSource.PGN.value:
+            headers = response.get("headers", {})
+            for key in ("white", "black", "result", "date", "site", "event"):
+                header_value = headers.get(key.title())
+                if header_value and key not in metadata:
+                    metadata[key] = header_value
+            game.imported_metadata = metadata
+            response["metadata"] = metadata
         stored = await persist_imported_game(
             db,
             user=current.user,
@@ -621,6 +676,18 @@ async def import_game(
         game.imported_game_id = str(stored.id)
         response["game_id"] = str(stored.id)
         return response
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/import-position")
+async def import_position(
+    request: ImportPositionRequest,
+    game: ChessGame = Depends(get_game),
+    current: CurrentAuth = Depends(require_csrf),
+):
+    try:
+        return game.load_fen(request.fen)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -694,6 +761,16 @@ async def analyze_imported_game(
                 game_id=uuid.UUID(raw_game_id),
                 engine_result=engine_data,
                 coach_response=llm_result.text,
+            )
+            await add_chat_messages(
+                db,
+                user=current.user,
+                game_id=uuid.UUID(raw_game_id),
+                messages=(
+                    ("user", "game_review", request.message),
+                    ("assistant", "game_review", llm_result.text),
+                ),
+                fen=game.get_fen(),
             )
         last_ai_analyses[session_id] = llm_result.text
         return {
@@ -788,6 +865,21 @@ async def chat_with_agent(
             )
             usage_details.update(llm_result.usage)
 
+            chat_game_id = await current_owned_game_id(
+                db, game=game, current=current
+            )
+            if chat_game_id is not None:
+                await add_chat_messages(
+                    db,
+                    user=current.user,
+                    game_id=chat_game_id,
+                    messages=(
+                        ("user", "position", request.message),
+                        ("assistant", "position", llm_result.text),
+                    ),
+                    fen=current_fen,
+                )
+
         last_ai_analyses[session_id] = llm_result.text
         return {"response": llm_result.text}
 
@@ -807,10 +899,21 @@ async def chat_with_agent(
 @app.post("/api/chat/translate")
 async def translate_chat_analysis(
     session_id: str = Depends(get_session_id),
+    game: ChessGame = Depends(get_game),
     current: CurrentAuth = Depends(require_entitlement("ai_game_review", write=True)),
     db: AsyncSession = Depends(get_db_session),
 ):
-    source_analysis = last_ai_analyses.get(session_id)
+    chat_game_id = await current_owned_game_id(db, game=game, current=current)
+    stored_analysis = (
+        await latest_translatable_analysis(
+            db, user=current.user, game_id=chat_game_id
+        )
+        if chat_game_id is not None
+        else None
+    )
+    source_analysis = (
+        stored_analysis.content if stored_analysis else last_ai_analyses.get(session_id)
+    )
     if not source_analysis:
         raise HTTPException(
             status_code=409,
@@ -828,6 +931,14 @@ async def translate_chat_analysis(
             llm_result = await translate_analysis_to_english(source_analysis[:10_000])
             usage_details.update(llm_result.usage)
             usage_details["operation"] = "translation_en"
+            if chat_game_id is not None:
+                await add_chat_messages(
+                    db,
+                    user=current.user,
+                    game_id=chat_game_id,
+                    messages=(("assistant", "translation", llm_result.text),),
+                    fen=game.get_fen(),
+                )
         return {"response": llm_result.text}
     except LLMServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
@@ -861,7 +972,15 @@ async def game_history(
         offset=max(offset, 0),
         source=source,
     )
-    return {"games": [game_response(model) for model in models]}
+    activity_game_ids = await games_with_analysis_activity(
+        db, user=current.user, game_ids=[model.id for model in models]
+    )
+    return {
+        "games": [
+            game_response(model, has_analysis=model.id in activity_game_ids)
+            for model in models
+        ]
+    }
 
 
 @app.get("/api/games/{game_id}")
@@ -877,9 +996,46 @@ async def game_history_detail(
         raise HTTPException(status_code=404, detail="Nie znaleziono partii")
     analyses = sorted(model.analyses, key=lambda item: item.created_at, reverse=True)
     return {
-        "game": game_response(model, include_pgn=True),
+        "game": game_response(
+            model,
+            include_pgn=True,
+            has_analysis=bool(model.analyses or model.chat_messages),
+        ),
         "analyses": [analysis_response(item) for item in analyses],
     }
+
+
+@app.get("/api/games/{game_id}/chat")
+async def game_chat_history(
+    game_id: uuid.UUID,
+    current: CurrentAuth = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db_session),
+):
+    model = await get_owned_game(
+        db, user=current.user, game_id=game_id, with_analyses=True
+    )
+    if model is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono partii")
+    messages = await list_chat_messages(
+        db, user=current.user, game_id=game_id, limit=200
+    )
+    return {"messages": [chat_message_response(item) for item in messages]}
+
+
+@app.delete("/api/games/{game_id}/chat")
+async def delete_game_chat_history(
+    game_id: uuid.UUID,
+    current: CurrentAuth = Depends(require_csrf),
+    db: AsyncSession = Depends(get_db_session),
+):
+    model = await get_owned_game(
+        db, user=current.user, game_id=game_id, with_analyses=True
+    )
+    if model is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono partii")
+    await clear_chat_messages(db, user=current.user, game_id=game_id)
+    await db.commit()
+    return {"cleared": True, "has_analysis": bool(model.analyses)}
 
 
 @app.post("/api/games/{game_id}/open")

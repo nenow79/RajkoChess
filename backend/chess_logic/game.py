@@ -83,6 +83,24 @@ class ChessGame:
         self.current_ply = 0
         self.in_variation = False
 
+    def load_fen(self, fen: str) -> dict:
+        """Loads a legal standalone position and clears imported-game context."""
+        try:
+            board = chess.Board(fen.strip())
+        except ValueError as exc:
+            raise ValueError("Nie udało się odczytać pozycji FEN") from exc
+        if not board.is_valid():
+            raise ValueError("FEN nie opisuje prawidłowej pozycji szachowej")
+
+        self.board = board
+        self.imported_pgn = None
+        self.imported_game_id = None
+        self.imported_metadata = None
+        self.imported_moves = []
+        self.current_ply = 0
+        self.in_variation = False
+        return {"fen": self.get_fen(), "history": []}
+
     def load_pgn(
         self, pgn: str, metadata: dict | None = None, game_id: str | None = None
     ) -> dict:

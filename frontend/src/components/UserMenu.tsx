@@ -4,6 +4,7 @@ import { getAuthErrorMessage } from "../auth/api";
 import { useAuth } from "../auth/useAuth";
 import { getMyPlan, type PlanSummary } from "../admin/api";
 import AdminPanel from "./AdminPanel";
+import AccountSettings from "./AccountSettings";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
@@ -12,6 +13,7 @@ export default function UserMenu() {
   const [plan, setPlan] = useState<PlanSummary | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadPlan = useCallback(
     () => getMyPlan().then(setPlan).catch(() => setPlan(null)),
@@ -54,6 +56,7 @@ export default function UserMenu() {
         {(plan?.key || "free").toUpperCase()}
       </button>
       {user.system_role === "admin" && <button type="button" onClick={() => setAdminOpen(true)}>Administracja</button>}
+      <button type="button" onClick={() => setSettingsOpen(true)}>Ustawienia</button>
       <button type="button" onClick={handleLogout} disabled={busy}>{busy ? "Wylogowywanie…" : "Wyloguj"}</button>
       {error && <span className="user-menu-error" role="alert">{error}</span>}
       {planOpen && plan && (
@@ -69,6 +72,7 @@ export default function UserMenu() {
         </div>
       )}
       {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
+      {settingsOpen && <AccountSettings onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

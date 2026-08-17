@@ -64,11 +64,14 @@ niedostępnej bazie lub Redisie, błędnej konfiguracji nginx, nieudanym backupi
 migracji albo healthchecku. Po wdrożeniu należy ręcznie sprawdzić:
 
 1. rejestrację, odbiór wiadomości weryfikacyjnej i logowanie kontem testowym,
-2. import PGN, pełną analizę i ponowne otwarcie partii z historii,
-3. limit Free oraz podgląd użycia, bez przyznawania Premium kontu testowemu,
-4. grę z botem i przejście zakończonej partii do analizy,
-5. panel administratora i wpis audytowy po kontrolnej operacji,
-6. brak sekretów oraz danych osobowych w logach aplikacji i nginx.
+2. import PGN i FEN, pełną analizę, znacznik analizy, odtworzenie rozmowy po
+   odświeżeniu oraz ponowne otwarcie partii z historii,
+3. zapis domyślnego loginu Chess.com w ustawieniach konta i jego automatyczne
+   wypełnienie w formularzu importu,
+4. limit Free oraz podgląd użycia, bez przyznawania Premium kontu testowemu,
+5. grę z botem i przejście zakończonej partii do analizy,
+6. panel administratora i wpis audytowy po kontrolnej operacji,
+7. brak sekretów oraz danych osobowych w logach aplikacji i nginx.
 
 ## Kontrola codzienna i alarmy
 

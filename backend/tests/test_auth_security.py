@@ -118,6 +118,7 @@ class AuthSchemaTests(unittest.TestCase):
             "/api/undo",
             "/api/reset",
             "/api/import-game",
+            "/api/import-position",
             "/api/imported-game/position",
             "/api/analyze-game",
             "/api/chat",
@@ -135,6 +136,12 @@ class AuthSchemaTests(unittest.TestCase):
             self.assertTrue(
                 any(item["name"] == "X-CSRF-Token" for item in parameters), path
             )
+        delete_parameters = paths["/api/games/{game_id}/chat"]["delete"].get(
+            "parameters", []
+        )
+        self.assertTrue(
+            any(item["name"] == "X-CSRF-Token" for item in delete_parameters)
+        )
 
     def test_game_history_requires_session_and_never_accepts_owner_id(self):
         paths = app.openapi()["paths"]
@@ -142,11 +149,27 @@ class AuthSchemaTests(unittest.TestCase):
             ("/api/games", "get"),
             ("/api/games/{game_id}", "get"),
             ("/api/games/{game_id}/open", "post"),
+            ("/api/games/{game_id}/chat", "get"),
+            ("/api/games/{game_id}/chat", "delete"),
         ):
             operation = paths[path][method]
             self.assertIn({"SessionCookie": []}, operation.get("security", []))
             parameters = operation.get("parameters", [])
             self.assertFalse(any(item["name"] == "owner_id" for item in parameters))
+
+    def test_platform_account_settings_are_private_and_csrf_protected(self):
+        paths = app.openapi()["paths"]
+        read = paths["/api/auth/platform-accounts"]["get"]
+        self.assertIn({"SessionCookie": []}, read.get("security", []))
+        for method in ("put", "delete"):
+            operation = paths["/api/auth/platform-accounts/{provider}"][method]
+            self.assertIn({"SessionCookie": []}, operation.get("security", []))
+            self.assertTrue(
+                any(
+                    item["name"] == "X-CSRF-Token"
+                    for item in operation.get("parameters", [])
+                )
+            )
 
     def test_game_state_key_comes_from_database_session_id(self):
         database_session_id = uuid.uuid4()
