@@ -21,6 +21,22 @@ class ChessGame:
         """Zwraca obecną pozycję w formacie FEN."""
         return self.board.fen()
 
+    def get_position_state(self) -> dict:
+        """Returns the board together with an active imported-game context."""
+        if not self.imported_pgn:
+            return {"fen": self.get_fen()}
+
+        parsed_game = chess.pgn.read_game(StringIO(self.imported_pgn))
+        headers = dict(parsed_game.headers) if parsed_game is not None else {}
+        response = {
+            **self._imported_position_response(headers),
+            "pgn": self.imported_pgn,
+        }
+        source = (self.imported_metadata or {}).get("source")
+        if isinstance(source, str):
+            response["source"] = source
+        return response
+
     def make_move(self, uci_move: str, preserve_imported_context: bool = False) -> bool:
         """Próbuje wykonać ruch w formacie UCI. Zwraca True jeśli się powiodło."""
         try:

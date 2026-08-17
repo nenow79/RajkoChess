@@ -197,6 +197,13 @@ class AuthenticationApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(opened.json()["game_id"], game_id)
         self.assertEqual(opened.json()["metadata"]["opponent"], "Tester")
 
+        restored_position = await self.client.get("/api/position")
+        self.assertEqual(restored_position.status_code, 200, restored_position.text)
+        self.assertEqual(restored_position.json()["game_id"], game_id)
+        self.assertEqual(restored_position.json()["metadata"]["opponent"], "Tester")
+        self.assertEqual(restored_position.json()["source"], "chesscom")
+        self.assertEqual(restored_position.json()["pgn"], import_payload["pgn"])
+
         logged_out = await self.client.post(
             "/api/auth/logout",
             headers={"X-CSRF-Token": csrf_token},

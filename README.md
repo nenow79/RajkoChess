@@ -94,9 +94,13 @@ Profile botów, zakończone partie, pełne analizy i rozmowy RajkoAI przypisane 
 partii są przechowywane w PostgreSQL.
 Każdy użytkownik widzi i otwiera wyłącznie własną historię. Ponowny import tej
 samej partii Chess.com aktualizuje istniejący zapis zamiast tworzyć duplikat.
-Pod szachownicą znajdują się dwa zwarte widgety: `Partie chess.com` otwiera
-okno wyboru partii z konta Chess.com, a `Moje partie z botami` pokazuje wyłącznie
-trwale zapisane partie rozegrane z botami Rajko Chess.
+Pod szachownicą znajduje się jeden zwarty widget `Partia do analizy`. Otwiera
+wspólne okno wyboru partii z Chess.com, prywatnej biblioteki (Chess.com, boty i
+importy PGN) albo wklejenia PGN/FEN. Login Chess.com zapisany w ustawieniach jest
+wartością domyślną, ale można go zmienić, aby przeanalizować partie innej osoby.
+Jeśli użytkownik ponownie otworzy przeglądarkę w ramach tej samej sesji,
+`/api/position` zwraca również kontekst aktywnej zapisanej partii. Frontend
+odtwarza jej opis, PGN, nawigację i rozmowę RajkoAI powiązaną przez `games.id`.
 Zwykły użytkownik widzi boty
 publiczne i własne prywatne; może tworzyć, edytować i usuwać wyłącznie własne
 boty prywatne. Botami publicznymi zarządza administrator. Aktywne partie nadal

@@ -7,13 +7,11 @@ import ChessBoardContainer from "./components/ChessBoardContainer";
 import LichessExplorer from "./components/LichessExplorer";
 import StockfishPanel from "./components/StockfishPanel";
 import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
-import ChessComPanel from "./components/ChessComPanel";
+import AnalysisSourcePanel from "./components/AnalysisSourcePanel";
 import { API_URL } from "./config";
 import BotGameMode from "./components/BotGameMode";
 import AuthScreen from "./components/AuthScreen";
 import UserMenu from "./components/UserMenu";
-import GameHistoryPanel from "./components/GameHistoryPanel";
-import ManualImportPanel from "./components/ManualImportPanel";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { useAuth } from "./auth/useAuth";
@@ -28,6 +26,7 @@ import type {
   HistoricalGameOpen,
   ImportedGame,
   PositionAnalysis,
+  PositionState,
   RatingRange,
 } from "./types";
 
@@ -61,11 +60,11 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [isLoadingChessCom, setIsLoadingChessCom] = useState(false);
   const [error, setError] = useState("");
   const [importedGame, setImportedGame] = useState<ImportedGame | null>(null);
+  const [isFenPosition, setIsFenPosition] = useState(false);
   const [gameNavigation, setGameNavigation] = useState<GameNavigation | null>(null);
   const [gameAnalysis, setGameAnalysis] = useState<GameAnalysis | null>(null);
   const [navigationMove, setNavigationMove] = useState<string | null>(null);
   const [isVariationMode, setIsVariationMode] = useState(false);
-  const [historyRevision, setHistoryRevision] = useState(0);
 
   useEffect(() => {
     setChessComUsername((current) => (
@@ -145,7 +144,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           pgn: initialGame.pgn,
           metadata: { opponent: initialGame.bot?.name, result: initialGame.result, source: "bot" },
         })
-      : axios.get(`${API_URL}/position`);
+      : axios.get<PositionState>(`${API_URL}/position`);
     void positionRequest
       .then((res) => {
         gameRef.current = new Chess(res.data.fen);
@@ -154,6 +153,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         if (initialGame?.pgn) {
           setImportedGame({
             ...initialGame,
+            source: "bot",
             pgn: initialGame.pgn,
             opponent: initialGame.bot?.name,
             storedGameId: res.data.game_id,
@@ -164,7 +164,22 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             moveLabel: res.data.move_label,
           });
           consumeInitialGameRef.current?.();
-          setHistoryRevision(prev => prev + 1);
+        } else if (res.data.game_id && res.data.pgn) {
+          const metadata = res.data.metadata || {};
+          setImportedGame({
+            ...metadata,
+            source: res.data.source
+              || (metadata.source as ImportedGame["source"] | undefined)
+              || (metadata.id ? "chesscom" : "pgn"),
+            pgn: res.data.pgn,
+            storedGameId: res.data.game_id,
+          });
+          setGameNavigation({
+            currentPly: res.data.current_ply || 0,
+            totalPlies: res.data.total_plies || 0,
+            moveLabel: res.data.move_label || "Pozycja startowa",
+          });
+          setIsVariationMode(Boolean(res.data.in_variation));
         }
         return Promise.allSettled([
           axios.get(`${API_URL}/explorer`)
@@ -187,7 +202,8 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
-        setImportedGame({ ...selectedGame, storedGameId: res.data.game_id });
+        setImportedGame({ ...selectedGame, source: "chesscom", storedGameId: res.data.game_id });
+        setIsFenPosition(false);
         setGameAnalysis(null);
         setNavigationMove(null);
         setIsVariationMode(false);
@@ -197,7 +213,6 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           moveLabel: res.data.move_label,
         });
         fetchAllData();
-        setHistoryRevision(prev => prev + 1);
       })
       .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się zaimportować partii.")));
   };
@@ -271,6 +286,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
         setImportedGame(null);
+        setIsFenPosition(false);
         setGameNavigation(null);
         setGameAnalysis(null);
         setNavigationMove(null);
@@ -303,9 +319,11 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
     setBoardKey(prev => prev + 1);
     setImportedGame({
       ...stored.metadata,
+      source: stored.source,
       pgn: stored.pgn,
       storedGameId: stored.game_id,
     });
+    setIsFenPosition(false);
     setGameAnalysis(null);
     setNavigationMove(null);
     setIsVariationMode(false);
@@ -326,6 +344,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         setFen(response.data.fen);
         setBoardKey(prev => prev + 1);
         clearImportedGameContext();
+        setIsFenPosition(true);
       } else {
         const response = await axios.post(`${API_URL}/import-game`, {
           pgn: value,
@@ -343,6 +362,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           opponent: white || black ? `${white || "?"} – ${black || "?"}` : undefined,
           storedGameId: response.data.game_id,
         });
+        setIsFenPosition(false);
         setGameAnalysis(null);
         setNavigationMove(null);
         setIsVariationMode(false);
@@ -351,7 +371,6 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           totalPlies: response.data.total_plies,
           moveLabel: response.data.move_label,
         });
-        setHistoryRevision(prev => prev + 1);
       }
       fetchAllData();
     } catch (error) {
@@ -367,7 +386,6 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         game.id === externalId ? { ...game, has_analysis: hasAnalysis } : game
       )));
     }
-    setHistoryRevision(prev => prev + 1);
   };
 
   return (
@@ -412,30 +430,18 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             evaluationSeries={gameAnalysis?.evaluation_series}
             pgn={importedGame?.pgn}
           />
-          <ChessComPanel
-            key={savedChessComUsername}
+          <AnalysisSourcePanel
             username={chessComUsername}
-            games={chessComGames}
-            isLoading={isLoadingChessCom}
+            chessComGames={chessComGames}
+            isLoadingChessCom={isLoadingChessCom}
             importedGame={importedGame}
-            onImport={handleImportGame}
-            onRefresh={fetchChessComGames}
+            isFenPosition={isFenPosition}
+            activeGameId={importedGame?.storedGameId}
+            onChessComImport={handleImportGame}
+            onChessComRefresh={fetchChessComGames}
             onUsernameChange={handleChessComUsernameChange}
-          />
-          <ManualImportPanel onImport={handleManualImport} />
-          <GameHistoryPanel
-            activeGameId={importedGame?.storedGameId}
-            refreshKey={historyRevision}
-            onOpen={handleOpenHistoricalGame}
-            onError={setError}
-          />
-          <GameHistoryPanel
-            activeGameId={importedGame?.storedGameId}
-            refreshKey={historyRevision}
-            source="pgn"
-            title="Moje importy PGN"
-            emptyMessage="Ręcznie importowane partie PGN pojawią się tutaj."
-            onOpen={handleOpenHistoricalGame}
+            onManualImport={handleManualImport}
+            onOpenStoredGame={handleOpenHistoricalGame}
             onError={setError}
           />
         </div>

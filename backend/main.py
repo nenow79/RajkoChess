@@ -464,8 +464,8 @@ class UndoRequest(BaseModel):
 
 @app.get("/api/position")
 async def get_position(game: ChessGame = Depends(get_game)):
-    """Zwraca bieżącą pozycję na szachownicy."""
-    return {"fen": game.get_fen()}
+    """Zwraca pozycję i kontekst aktywnej partii z bieżącej sesji."""
+    return game.get_position_state()
 
 
 @app.post("/api/move")
@@ -673,7 +673,11 @@ async def import_game(
             metadata=metadata,
         )
         await db.commit()
+        metadata["source"] = stored.source.value
+        game.imported_metadata = metadata
         game.imported_game_id = str(stored.id)
+        response["metadata"] = metadata
+        response["source"] = stored.source.value
         response["game_id"] = str(stored.id)
         return response
     except ValueError as e:
@@ -1048,9 +1052,10 @@ async def open_historical_game(
     model = await get_owned_game(db, user=current.user, game_id=game_id)
     if model is None:
         raise HTTPException(status_code=404, detail="Nie znaleziono partii")
+    metadata = {**model.metadata_json, "source": model.source.value}
     response = game.load_pgn(
         model.pgn,
-        model.metadata_json,
+        metadata,
         game_id=str(model.id),
     )
     response["pgn"] = model.pgn

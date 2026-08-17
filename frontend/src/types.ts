@@ -42,6 +42,7 @@ export interface ChessComGame {
 
 export interface ImportedGame {
   pgn: string;
+  source?: StoredGameSummary["source"];
   id?: string;
   storedGameId?: string;
   color?: PlayerColor;
@@ -77,9 +78,22 @@ export interface HistoricalGameOpen {
   pgn: string;
   metadata: Record<string, unknown>;
   game_id: string;
+  source: StoredGameSummary["source"];
   current_ply: number;
   total_plies: number;
   move_label: string;
+}
+
+export interface PositionState {
+  fen: string;
+  pgn?: string;
+  metadata?: Record<string, unknown>;
+  source?: StoredGameSummary["source"];
+  game_id?: string;
+  current_ply?: number;
+  total_plies?: number;
+  move_label?: string;
+  in_variation?: boolean;
 }
 
 export interface ExplorerMove {
