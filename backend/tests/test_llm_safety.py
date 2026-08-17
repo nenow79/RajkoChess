@@ -117,14 +117,17 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
                 user_prompt="Jaki jest najlepszy ruch?",
             )
 
+        await_args = create.await_args
+        self.assertIsNotNone(await_args)
+        assert await_args is not None
         self.assertEqual(
-            create.await_args.kwargs["max_tokens"],
+            await_args.kwargs["max_tokens"],
             settings.openrouter_position_max_tokens,
         )
         self.assertEqual(result.usage["total_tokens"], 150)
         self.assertEqual(result.usage["openrouter_cost_credits"], 0.00125)
         self.assertNotIn("Wystąpił błąd", result.text)
-        system_prompt = create.await_args.kwargs["messages"][0]["content"]
+        system_prompt = await_args.kwargs["messages"][0]["content"]
         self.assertIn(OUT_OF_SCOPE_MESSAGE, system_prompt)
 
     async def test_translation_has_its_own_prompt_and_output_cap(self):
@@ -137,12 +140,15 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
                 "**Plan:** popraw ustawienie figur."
             )
 
+        await_args = create.await_args
+        self.assertIsNotNone(await_args)
+        assert await_args is not None
         self.assertEqual(result.text, "English analysis")
         self.assertEqual(
-            create.await_args.kwargs["max_tokens"],
+            await_args.kwargs["max_tokens"],
             settings.openrouter_translation_max_tokens,
         )
-        system_prompt = create.await_args.kwargs["messages"][0]["content"]
+        system_prompt = await_args.kwargs["messages"][0]["content"]
         self.assertIn("wyłącznie przekazaną analizę szachową", system_prompt)
 
 

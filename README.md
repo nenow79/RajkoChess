@@ -449,6 +449,7 @@ Konfiguracja nginx zakłada HTTPS przez certyfikat Let’s Encrypt dla `rajko.pl
 ```bash
 sudo mkdir -p /var/www/letsencrypt
 sudo certbot certonly --webroot -w /var/www/letsencrypt -d rajko.pl -d www.rajko.pl
+sudo cp deploy/nginx/pgadmin-proxy.conf /etc/nginx/snippets/pgadmin-proxy.conf
 sudo cp deploy/nginx/rajko-chess.conf /etc/nginx/sites-available/rajko-chess.conf
 sudo ln -s /etc/nginx/sites-available/rajko-chess.conf /etc/nginx/sites-enabled/rajko-chess.conf
 sudo nginx -t
