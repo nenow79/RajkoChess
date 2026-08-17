@@ -12,6 +12,7 @@ import { API_URL } from "./config";
 import BotGameMode from "./components/BotGameMode";
 import AuthScreen from "./components/AuthScreen";
 import UserMenu from "./components/UserMenu";
+import BuildFooter from "./components/BuildFooter";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import ResetPasswordScreen from "./components/ResetPasswordScreen";
 import { useAuth } from "./auth/useAuth";
@@ -472,6 +473,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         </div>
 
       </div>
+      <BuildFooter />
     </div>
   );
 }

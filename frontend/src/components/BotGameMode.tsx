@@ -5,6 +5,7 @@ import { Chessboard } from "react-chessboard";
 import { API_URL } from "../config";
 import BotCreator from "./BotCreator";
 import UserMenu from "./UserMenu";
+import BuildFooter from "./BuildFooter";
 import type { AppMode, BotGame, BotProfile, PlayerColor, PlayerColorChoice } from "../types";
 import { getMyPlan, type PlanSummary } from "../admin/api";
 import { getAuthErrorMessage } from "../auth/api";
@@ -210,6 +211,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
         <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p>{game.llm_commentary_enabled && <p className="commentary-active">✦ Komentarze ważnych momentów są włączone</p>}<h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{moveHistory.length ? moveHistory.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
       </main>}
       {error && !game && <p className="global-error">{error}</p>}
+      <BuildFooter />
       {creator && <BotCreator editingBot={creator.bot} onClose={() => setCreator(null)} onSaved={() => { setCreator(null); loadBots(); }} />}
       {pendingPromotion && <div className="promotion-overlay" role="dialog" aria-modal="true" aria-label="Wybierz figurę promocji"><div className="promotion-picker"><strong>Wybierz figurę</strong><div>{PROMOTION_OPTIONS.map(([piece, label, symbol]) => <button key={piece} type="button" title={label} onClick={() => { const pending = pendingPromotion; setPendingPromotion(null); setSelectedSquare(null); submitMove(pending.from, pending.to, piece); }}>{symbol}<span>{label}</span></button>)}</div><button type="button" className="promotion-cancel" onClick={() => setPendingPromotion(null)}>Anuluj</button></div></div>}
     </div>

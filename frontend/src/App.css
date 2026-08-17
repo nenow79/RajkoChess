@@ -3,13 +3,24 @@
 ========================================= */
 .app-container {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
   height: 100vh;
   overflow: hidden;
   padding: 16px 20px;
   font-family: sans-serif;
   background-color: #f8f9fa;
+}
+
+.build-footer {
+  width: 100%;
+  max-width: 1760px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  color: #8a9590;
+  font-size: 9px;
+  line-height: 1;
+  text-align: right;
 }
 
 .app-header {

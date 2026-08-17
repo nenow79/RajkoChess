@@ -5,9 +5,13 @@ import process from 'node:process'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const buildTimestamp = new Date().toISOString()
 
   return {
     base: env.VITE_BASE_PATH || '/',
+    define: {
+      __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+    },
     plugins: [react()],
     server: {
       proxy: {

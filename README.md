@@ -431,6 +431,10 @@ sudo mkdir -p /var/www/rajko-chess/chess
 sudo rsync -a --delete dist/ /var/www/rajko-chess/chess/
 ```
 
+Każdy build Vite osadza swój timestamp w aplikacji. Po zalogowaniu jest on
+widoczny w dyskretnej stopce jako `Ostatni build`, co pozwala szybko potwierdzić,
+czy przeglądarka i serwer udostępniają najnowszą wersję frontendu.
+
 Backend:
 
 ```bash
