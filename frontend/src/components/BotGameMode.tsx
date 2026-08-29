@@ -23,6 +23,18 @@ interface CreatorState {
 const PROMOTION_OPTIONS: [PieceSymbol, string, string][] = [
   ["q", "Hetman", "♛"], ["r", "Wieża", "♜"], ["b", "Goniec", "♝"], ["n", "Skoczek", "♞"],
 ];
+const PIECE_NAMES: Record<PieceSymbol, string> = {
+  p: "pion",
+  n: "skoczek",
+  b: "goniec",
+  r: "wieża",
+  q: "hetman",
+  k: "król",
+};
+const PIECE_SYMBOLS: Record<PlayerColor, Record<PieceSymbol, string>> = {
+  white: { p: "♙", n: "♘", b: "♗", r: "♖", q: "♕", k: "♔" },
+  black: { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" },
+};
 const MOVE_ANIMATION_MS = 400;
 
 export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProps) {
@@ -56,9 +68,10 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
   const board = useMemo(() => {
     try { return new Chess(game?.fen); } catch { return new Chess(); }
   }, [game?.fen]);
-  const moveHistory = useMemo(() => {
+  const gameRecord = useMemo(() => {
     const replay = new Chess();
-    const moves = [];
+    const moves: string[] = [];
+    const captured: Record<PlayerColor, PieceSymbol[]> = { white: [], black: [] };
     for (const uci of game?.history || []) {
       try {
         const result = replay.move({
@@ -68,12 +81,19 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
         });
         if (!result) break;
         moves.push(result.san);
+        if (result.captured) {
+          const capturedColor: PlayerColor = result.color === "w" ? "black" : "white";
+          captured[capturedColor].push(result.captured);
+        }
       } catch {
         break;
       }
     }
-    return moves;
+    return { moves, captured };
   }, [game?.history]);
+  const playerCapturedPieces = game ? gameRecord.captured[game.player_color] : [];
+  const botColor: PlayerColor = game?.player_color === "black" ? "white" : "black";
+  const botCapturedPieces = game ? gameRecord.captured[botColor] : [];
   const isPlayerTurn = game?.status === "active" && game.turn === game.player_color && !busy;
   const orientation = boardOrientation || game?.player_color || "white";
   const activeSelectedSquare = selectedSquare && selectedSquare.fen === game?.fen && !busy ? selectedSquare.square : null;
@@ -247,7 +267,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
           {error && <p className="form-error">{error}</p>}
           {game.status === "active" ? <div className="game-action-row"><button onClick={() => action("draw-offer")} disabled={busy}>Zaproponuj remis</button><button className="danger-action" onClick={() => action("resign")} disabled={busy}>Poddaj partię</button></div> : <div className="game-action-row"><button onClick={() => setGame(null)}>Nowa partia</button><button className="primary-action" onClick={analyze} disabled={busy}>Przeanalizuj partię</button></div>}
         </section>
-        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p>{game.llm_commentary_enabled && <p className="commentary-active">✦ Powitanie i komentarze ważnych momentów są włączone</p>}<h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{moveHistory.length ? moveHistory.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
+        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p>{game.llm_commentary_enabled && <p className="commentary-active">✦ Powitanie i komentarze ważnych momentów są włączone</p>}<h3>Zbite bierki</h3><div className="captured-pieces"><div><span>Twoje straty</span><strong aria-label={playerCapturedPieces.length ? playerCapturedPieces.map(piece => PIECE_NAMES[piece]).join(", ") : "Brak zbitych bierek"}>{playerCapturedPieces.length ? playerCapturedPieces.map((piece, index) => <i key={`${piece}-${index}`} title={PIECE_NAMES[piece]}>{PIECE_SYMBOLS[game.player_color][piece]}</i>) : <small>—</small>}</strong></div><div><span>Straty: {game.bot.name}</span><strong aria-label={botCapturedPieces.length ? botCapturedPieces.map(piece => PIECE_NAMES[piece]).join(", ") : "Brak zbitych bierek"}>{botCapturedPieces.length ? botCapturedPieces.map((piece, index) => <i key={`${piece}-${index}`} title={PIECE_NAMES[piece]}>{PIECE_SYMBOLS[botColor][piece]}</i>) : <small>—</small>}</strong></div></div><h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{gameRecord.moves.length ? gameRecord.moves.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
       </main>}
       {error && !game && <p className="global-error">{error}</p>}
       <BuildFooter />
