@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +49,7 @@ class Bot(UuidPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     avatar: Mapped[str] = mapped_column(String(32), nullable=False, default="🤖")
     target_elo: Mapped[int] = mapped_column(Integer, nullable=False)
+    extra_weakening: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     style: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     openings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     phrases: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)

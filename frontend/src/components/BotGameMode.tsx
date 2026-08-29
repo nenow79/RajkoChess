@@ -23,6 +23,7 @@ interface CreatorState {
 const PROMOTION_OPTIONS: [PieceSymbol, string, string][] = [
   ["q", "Hetman", "♛"], ["r", "Wieża", "♜"], ["b", "Goniec", "♝"], ["n", "Skoczek", "♞"],
 ];
+const MOVE_ANIMATION_MS = 400;
 
 export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProps) {
   const [bots, setBots] = useState<BotProfile[]>([]);
@@ -118,15 +119,37 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
   };
 
   const submitMove = (from: Square, to: Square, promotion?: PieceSymbol) => {
-    if (!isPlayerTurn) return false;
+    if (!isPlayerTurn || !game) return false;
     let result;
     try { result = board.move({ from, to, promotion }); } catch { return false; }
     if (!result) return false;
     const uci = `${from}${to}${result.promotion || ""}`;
+    const previousGame = game;
+    const optimisticGame: BotGame = {
+      ...game,
+      fen: board.fen(),
+      history: [...game.history, uci],
+      turn: board.turn() === "w" ? "white" : "black",
+      last_move_uci: uci,
+    };
+    const submittedAt = Date.now();
+
+    setGame(optimisticGame);
+    setSelectedSquare(null);
     setBusy(true); setError("");
     axios.post<BotGame>(`${API_URL}/bot-games/move`, { uci })
-      .then(res => setGame(res.data))
-      .catch(err => setError(getAuthErrorMessage(err, "Ruch został odrzucony.")))
+      .then(async res => {
+        const includesBotMove = res.data.history.length > optimisticGame.history.length;
+        const remainingAnimationTime = MOVE_ANIMATION_MS - (Date.now() - submittedAt);
+        if (includesBotMove && remainingAnimationTime > 0) {
+          await new Promise<void>(resolve => window.setTimeout(resolve, remainingAnimationTime));
+        }
+        setGame(res.data);
+      })
+      .catch(err => {
+        setGame(previousGame);
+        setError(getAuthErrorMessage(err, "Ruch został odrzucony."));
+      })
       .finally(() => setBusy(false));
     return true;
   };
@@ -201,7 +224,7 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
       </main> : <main className="bot-game-layout">
         <section className="bot-board-column">
           <div className="bot-game-status"><div className="bot-avatar small">{game.bot.avatar}</div><div><strong>{game.bot.name} · ≈ {game.bot.target_elo} Elo</strong><span>{game.status === "active" ? (busy ? "Bot myśli..." : isPlayerTurn ? "Twój ruch" : "Ruch bota") : `Koniec partii · ${game.result}`}</span></div></div>
-          <div className="board-wrapper"><Chessboard position={game.fen} onPieceDrop={move} onSquareClick={handleSquareClick} customSquareStyles={squareStyles} arePiecesDraggable={isPlayerTurn} boardOrientation={orientation} animationDuration={400} /></div>
+          <div className="board-wrapper"><Chessboard position={game.fen} onPieceDrop={move} onSquareClick={handleSquareClick} customSquareStyles={squareStyles} arePiecesDraggable={isPlayerTurn} boardOrientation={orientation} animationDuration={MOVE_ANIMATION_MS} /></div>
           <button type="button" className="flip-board-btn" onClick={() => setBoardOrientation(current => (current || game.player_color) === "white" ? "black" : "white")}>Obróć szachownicę · na dole: {orientation === "white" ? "białe" : "czarne"}</button>
           {game.bot_message && <div className="bot-speech">{game.bot.avatar} „{game.bot_message}”</div>}
           {game.llm_commentary && <div className="bot-speech llm-commentary"><span>✦ komentarz LLM</span>{game.bot.avatar} „{game.llm_commentary}”</div>}

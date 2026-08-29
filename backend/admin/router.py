@@ -7,12 +7,17 @@ from auth.dependencies import CurrentAuth, require_admin, require_admin_write
 from auth.plans import effective_plan, plan_summary
 from auth.policies import ENTITLEMENT_DEFINITIONS, all_effective_entitlements
 from chess_logic.bot_catalog import bot_response
+from chess_logic.runtime_settings import (
+    BOT_GLOBAL_ELO_OFFSET_KEY,
+    get_bot_global_elo_offset,
+)
 from db.models import (
     AuditLog,
     AuthSession,
     Bot,
     Entitlement,
     PlanGrant,
+    RuntimeSetting,
     User,
     UserStatus,
 )
@@ -26,11 +31,66 @@ from admin.schemas import (
     AdminBotInspect,
     AdminUserResponse,
     AdminUserUpdate,
+    BotStrengthSettingUpdate,
     EntitlementUpdate,
     PremiumGrantRequest,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["Administration"])
+
+
+@router.get("/settings/bot-strength")
+async def get_bot_strength_setting(
+    current: Annotated[CurrentAuth, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    offset, source = await get_bot_global_elo_offset(db)
+    return {
+        "bot_global_elo_offset": offset,
+        "source": source,
+        "minimum": -600,
+        "maximum": 300,
+    }
+
+
+@router.put("/settings/bot-strength")
+async def set_bot_strength_setting(
+    payload: BotStrengthSettingUpdate,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    before, before_source = await get_bot_global_elo_offset(db)
+    setting = await db.get(RuntimeSetting, BOT_GLOBAL_ELO_OFFSET_KEY)
+    if setting is None:
+        setting = RuntimeSetting(
+            key=BOT_GLOBAL_ELO_OFFSET_KEY,
+            value={"offset": payload.bot_global_elo_offset},
+            updated_by_user_id=current.user.id,
+        )
+        db.add(setting)
+    else:
+        setting.value = {"offset": payload.bot_global_elo_offset}
+        setting.updated_by_user_id = current.user.id
+    await db.flush()
+    await write_audit(
+        db,
+        current=current,
+        action="settings.bot_strength_changed",
+        resource_type="runtime_setting",
+        resource_id=BOT_GLOBAL_ELO_OFFSET_KEY,
+        reason=payload.reason,
+        details={
+            "before": {"offset": before, "source": before_source},
+            "after": {"offset": payload.bot_global_elo_offset},
+        },
+    )
+    await db.commit()
+    return {
+        "bot_global_elo_offset": payload.bot_global_elo_offset,
+        "source": "database",
+        "minimum": -600,
+        "maximum": 300,
+    }
 
 
 def user_response(

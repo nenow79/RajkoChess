@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 
 import { getAuthErrorMessage } from "../auth/api";
 import {
+  getBotStrengthSetting,
   getAdminUsers,
   grantPremium,
   revokePremium,
+  updateBotStrengthSetting,
   type AdminUser,
+  type BotStrengthSetting,
 } from "../admin/api";
 
 interface AdminPanelProps {
@@ -16,13 +19,20 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyUser, setBusyUser] = useState<string | null>(null);
+  const [botStrength, setBotStrength] = useState<BotStrengthSetting | null>(null);
+  const [busySetting, setBusySetting] = useState(false);
   const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
-      setUsers(await getAdminUsers());
+      const [userItems, strengthSetting] = await Promise.all([
+        getAdminUsers(),
+        getBotStrengthSetting(),
+      ]);
+      setUsers(userItems);
+      setBotStrength(strengthSetting);
     } catch (requestError) {
       setError(getAuthErrorMessage(requestError, "Nie udało się pobrać użytkowników."));
     } finally {
@@ -32,8 +42,13 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
   useEffect(() => {
     let active = true;
-    getAdminUsers()
-      .then((items) => { if (active) setUsers(items); })
+    Promise.all([getAdminUsers(), getBotStrengthSetting()])
+      .then(([items, strengthSetting]) => {
+        if (active) {
+          setUsers(items);
+          setBotStrength(strengthSetting);
+        }
+      })
       .catch((requestError) => {
         if (active) setError(getAuthErrorMessage(requestError, "Nie udało się pobrać użytkowników."));
       })
@@ -78,13 +93,34 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     }
   };
 
+  const saveBotStrength = async () => {
+    if (!botStrength) return;
+    const value = botStrength.bot_global_elo_offset;
+    if (!Number.isInteger(value) || value < botStrength.minimum || value > botStrength.maximum) {
+      setError(`Korekta musi być liczbą całkowitą od ${botStrength.minimum} do ${botStrength.maximum}.`);
+      return;
+    }
+    const reason = window.prompt("Powód zmiany globalnej siły botów:", "Kalibracja na podstawie feedbacku");
+    if (!reason || reason.trim().length < 3) return;
+    setBusySetting(true);
+    setError("");
+    try {
+      setBotStrength(await updateBotStrengthSetting(value, reason.trim()));
+    } catch (requestError) {
+      setError(getAuthErrorMessage(requestError, "Nie udało się zapisać siły botów."));
+    } finally {
+      setBusySetting(false);
+    }
+  };
+
   return (
     <div className="admin-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-title">
       <section className="admin-panel">
         <header>
-          <div><p className="auth-eyebrow">ADMINISTRACJA</p><h2 id="admin-title">Użytkownicy i Premium</h2></div>
+          <div><p className="auth-eyebrow">ADMINISTRACJA</p><h2 id="admin-title">Ustawienia i użytkownicy</h2></div>
           <button type="button" onClick={onClose} aria-label="Zamknij">×</button>
         </header>
+        {botStrength && <section className="admin-settings-card"><div><h3>Globalna siła botów</h3><p>Korekta jest odejmowana lub dodawana do Elo każdego bota. Zmiana obejmie nowe partie bez restartu aplikacji.</p><small>Źródło: {botStrength.source === "database" ? "panel administratora" : "konfiguracja środowiska"}</small></div><label>Korekta Elo<input type="number" min={botStrength.minimum} max={botStrength.maximum} step="10" value={botStrength.bot_global_elo_offset} onChange={event => setBotStrength({ ...botStrength, bot_global_elo_offset: Number(event.target.value) })} /></label><button type="button" disabled={busySetting} onClick={() => void saveBotStrength()}>{busySetting ? "Zapisuję…" : "Zapisz"}</button></section>}
         <p className="admin-note">Przyznanie kolejnego okresu przedłuża aktywne Premium. Po terminie konto automatycznie wraca do Free.</p>
         {error && <p className="auth-error" role="alert">{error}</p>}
         {loading ? <p>Ładowanie użytkowników…</p> : (

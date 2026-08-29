@@ -73,6 +73,7 @@ from chess_logic.openings import (
     resolve_opening,
     search_openings,
 )
+from chess_logic.runtime_settings import get_bot_global_elo_offset
 from db.models import BotVisibility, GameSource
 from db.session import database_healthcheck, get_db_session
 from dotenv import load_dotenv
@@ -356,6 +357,7 @@ async def start_bot_game(
     try:
         model = await get_visible_bot(db, bot_id=request.bot_id, user=current.user)
         bot = bot_response(model, current.user)
+        elo_offset, _ = await get_bot_global_elo_offset(db)
     except BotNotFoundError:
         raise HTTPException(status_code=404, detail="Nie znaleziono bota")
     try:
@@ -372,6 +374,7 @@ async def start_bot_game(
                     bot,
                     request.player_color,
                     llm_commentary=request.llm_commentary,
+                    elo_offset=elo_offset,
                 )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))

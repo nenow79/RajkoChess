@@ -49,6 +49,10 @@ class AdminBotInspect(AdminReason):
     pass
 
 
+class BotStrengthSettingUpdate(AdminReason):
+    bot_global_elo_offset: int = Field(ge=-600, le=300)
+
+
 class AdminUserResponse(BaseModel):
     id: uuid.UUID
     email: str

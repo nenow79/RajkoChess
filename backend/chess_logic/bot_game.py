@@ -19,6 +19,23 @@ PIECE_VALUES = {
     chess.QUEEN: 9,
     chess.KING: 0,
 }
+DEFAULT_BOT_ELO_OFFSET = -100
+STOCKFISH_MIN_UCI_ELO = 1320
+
+
+def configured_bot_elo_offset() -> int:
+    try:
+        offset = int(os.getenv("BOT_GLOBAL_ELO_OFFSET", DEFAULT_BOT_ELO_OFFSET))
+    except ValueError:
+        offset = DEFAULT_BOT_ELO_OFFSET
+    return min(300, max(-600, offset))
+
+
+def effective_bot_elo(profile: dict, elo_offset: int | None = None) -> int:
+    """Return engine strength after applying the game-wide calibration."""
+    offset = configured_bot_elo_offset() if elo_offset is None else elo_offset
+    offset = min(300, max(-600, offset))
+    return min(2800, max(600, int(profile["target_elo"]) + offset))
 
 
 def opening_plan_moves(
@@ -50,10 +67,15 @@ def opening_plan_moves(
 
 
 async def choose_bot_move(
-    board: chess.Board, profile: dict, rng: random.Random | None = None
+    board: chess.Board,
+    profile: dict,
+    rng: random.Random | None = None,
+    elo_offset: int | None = None,
 ) -> chess.Move:
     rng = rng or random.Random()
     planned_moves = opening_plan_moves(board, profile)
+    effective_elo = effective_bot_elo(profile, elo_offset)
+    extra_weakening = bool(profile.get("extra_weakening", False))
 
     engine_path = os.getenv("STOCKFISH_PATH")
     if not engine_path or not os.path.exists(engine_path):
@@ -62,13 +84,15 @@ async def choose_bot_move(
         )
     _, engine = await chess.engine.popen_uci(engine_path)
     try:
-        if profile["target_elo"] >= 1320:
-            await engine.configure(
-                {"UCI_LimitStrength": True, "UCI_Elo": profile["target_elo"]}
-            )
+        await engine.configure(
+            {
+                "UCI_LimitStrength": True,
+                "UCI_Elo": max(STOCKFISH_MIN_UCI_ELO, effective_elo),
+            }
+        )
         legal_count = board.legal_moves.count()
-        multipv = min(12, legal_count)
-        think_time = 0.12 + ((profile["target_elo"] - 800) / 2000) * 0.45
+        multipv = min(20 if extra_weakening else 12, legal_count)
+        think_time = 0.12 + ((effective_elo - 800) / 2000) * 0.45
         infos = await engine.analyse(
             board, chess.engine.Limit(time=think_time), multipv=multipv
         )
@@ -91,20 +115,28 @@ async def choose_bot_move(
     if not candidates:
         return rng.choice(list(board.legal_moves))
 
-    elo_ratio = (profile["target_elo"] - 800) / 2000
+    elo_ratio = (effective_elo - 800) / 2000
+    weakness = min(1.1, max(0.0, 1 - elo_ratio))
     max_loss = 200 * (1 - elo_ratio) ** 1.5 + 30
+    if extra_weakening:
+        max_loss += 450 * weakness**1.5
     viable = [
         (move, score) for move, score in candidates if best_score - score <= max_loss
     ]
     style = profile["style"]
     temperature = max(8, 12 + 35 * (1 - elo_ratio) + style["risk"] * 0.35)
+    if extra_weakening:
+        temperature += 80 * weakness
 
     # Continue the opening plan only if Stockfish still considers it sound.
     viable_moves = {move for move, _ in viable}
     safe_planned = [
         (move, weight) for move, weight in planned_moves if move in viable_moves
     ]
-    if safe_planned:
+    opening_adherence = 0.55 + 0.35 * min(1.0, max(0.0, elo_ratio))
+    if safe_planned and (
+        not extra_weakening or rng.random() < opening_adherence
+    ):
         return rng.choices(
             [move for move, _ in safe_planned],
             weights=[weight for _, weight in safe_planned],
@@ -193,6 +225,7 @@ async def detect_commentary_event(board: chess.Board, move: chess.Move) -> dict 
 class BotGame:
     bot: dict
     player_color: chess.Color
+    elo_offset: int | None = None
     board: chess.Board = field(default_factory=chess.Board)
     status: str = "active"
     result: str | None = None
@@ -253,7 +286,14 @@ class BotGameManager:
     def lock(self, session_id):
         return self.locks.setdefault(session_id, asyncio.Lock())
 
-    async def start(self, session_id, bot, player_color, llm_commentary=False):
+    async def start(
+        self,
+        session_id,
+        bot,
+        player_color,
+        llm_commentary=False,
+        elo_offset: int | None = None,
+    ):
         color = (
             random.choice([chess.WHITE, chess.BLACK])
             if player_color == "random"
@@ -262,6 +302,7 @@ class BotGameManager:
         game = BotGame(
             bot=bot,
             player_color=color,
+            elo_offset=elo_offset,
             bot_message=bot["phrases"]["greeting"],
             llm_commentary_enabled=llm_commentary,
         )
@@ -319,7 +360,9 @@ class BotGameManager:
 
     async def _bot_turn(self, game):
         started_at = time.monotonic()
-        move = await choose_bot_move(game.board, game.bot)
+        move = await choose_bot_move(
+            game.board, game.bot, elo_offset=game.elo_offset
+        )
         # Ruchy z książki i łatwe pozycje nie powinny pojawiać się natychmiast.
         # Czas obejmuje analizę silnika, więc opóźniamy tylko brakującą część.
         desired_think_time = random.uniform(0.55, 1.15)
