@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from chess_logic.llm_agent import (
     OUT_OF_SCOPE_MESSAGE,
+    generate_bot_game_greeting,
     generate_chess_analysis,
     is_full_game_analysis_request,
     is_chess_request,
@@ -104,6 +105,34 @@ class PromptSanitizationTests(unittest.TestCase):
 
 
 class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bot_voice_uses_the_same_configured_model(self):
+        create = AsyncMock(return_value=completion_response("Powodzenia, zaczynajmy!"))
+        with (
+            patch("chess_logic.llm_agent.has_openrouter_api_key", return_value=True),
+            patch(
+                "chess_logic.llm_agent.get_default_model",
+                return_value="google/gemini-3-flash-preview",
+            ),
+            patch("chess_logic.llm_agent.client.chat.completions.create", create),
+        ):
+            result = await generate_bot_game_greeting(
+                bot={
+                    "name": "Profesor",
+                    "description": "Pozycyjny gracz.",
+                    "style": {"risk": 20},
+                    "openings": [],
+                    "phrases": {},
+                },
+                positions={"current": "start"},
+                move_history_san=[],
+                opening_event=None,
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            create.await_args.kwargs["model"], "google/gemini-3-flash-preview"
+        )
+
     async def test_position_analysis_caps_output_and_returns_usage_cost(self):
         create = AsyncMock(return_value=completion_response())
         with (

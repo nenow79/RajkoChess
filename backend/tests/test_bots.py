@@ -11,7 +11,9 @@ from chess_logic.bot_game import (
     choose_bot_move,
     effective_bot_elo,
     opening_plan_moves,
+    opening_repertoire_status,
 )
+from chess_logic.llm_agent import LLMResult
 from chess_logic.runtime_settings import get_bot_global_elo_offset
 from chess_logic.bots import BotStore
 from chess_logic.openings import search_openings
@@ -97,6 +99,9 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
             ]
         }
         self.assertEqual(opening_plan_moves(board, profile), [])
+        self.assertEqual(
+            opening_repertoire_status(board, profile, chess.BLACK), "deviated"
+        )
 
     async def test_low_elo_bot_uses_minimum_limited_engine_strength(self):
         board = chess.Board()
@@ -209,22 +214,68 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch("chess_logic.bot_game.choose_bot_move", fake_move),
                 patch(
+                    "chess_logic.bot_game.generate_bot_game_greeting",
+                    return_value=LLMResult(text="Zaczynajmy.", usage={}),
+                ) as greeting,
+                patch(
                     "chess_logic.bot_game.detect_commentary_event", return_value=event
                 ) as detect,
                 patch(
                     "chess_logic.bot_game.generate_bot_move_commentary",
-                    return_value="Tego pionka będzie ci brakować.",
+                    return_value=LLMResult(
+                        text="Tego pionka będzie ci brakować.", usage={}
+                    ),
                 ) as generate,
             ):
-                await manager.start("session", bot, "white", llm_commentary=True)
+                started = await manager.start(
+                    "session", bot, "white", llm_commentary=True
+                )
                 response = await manager.move("session", "e2e4")
 
+            greeting.assert_awaited_once()
+            self.assertEqual(started["llm_commentary"], "Zaczynajmy.")
             detect.assert_awaited_once()
             generate.assert_awaited_once()
             self.assertTrue(response["llm_commentary_enabled"])
             self.assertEqual(
                 response["llm_commentary"], "Tego pionka będzie ci brakować."
             )
+        finally:
+            store_dir.cleanup()
+
+    async def test_bot_comments_once_when_game_leaves_favorite_opening(self):
+        store_dir = tempfile.TemporaryDirectory()
+        try:
+            bot = BotStore(str(Path(store_dir.name) / "bots.sqlite3")).list()[1]
+            manager = BotGameManager()
+
+            async def fake_move(board, profile, rng=None, elo_offset=None):
+                return chess.Move.from_uci("d7d5")
+
+            with (
+                patch("chess_logic.bot_game.choose_bot_move", fake_move),
+                patch(
+                    "chess_logic.bot_game.generate_bot_game_greeting",
+                    return_value=LLMResult(text="Czekam na twój ruch.", usage={}),
+                ),
+                patch(
+                    "chess_logic.bot_game.detect_commentary_event", return_value=None
+                ),
+                patch(
+                    "chess_logic.bot_game.generate_bot_move_commentary",
+                    return_value=LLMResult(
+                        text="Wolałbym sycylijską, ale poradzę sobie także tutaj.",
+                        usage={},
+                    ),
+                ) as generate,
+            ):
+                await manager.start("session", bot, "white", llm_commentary=True)
+                response = await manager.move("session", "d2d4")
+
+            event = generate.await_args.kwargs["event"]
+            self.assertEqual(event["type"], "left_favorite_opening")
+            self.assertTrue(event["preferred_openings"])
+            self.assertIn("sycylijską", response["llm_commentary"].lower())
         finally:
             store_dir.cleanup()
 

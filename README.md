@@ -18,7 +18,8 @@ backup, monitoring i reakcję na incydenty zawiera
   rozmów RajkoAI przypisanych do konkretnej partii,
 - czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha,
 - osobny tryb gry ze spersonalizowanymi botami o regulowanej sile, stylu i repertuarze,
-- opcjonalne komentarze LLM botów przy najważniejszych momentach partii,
+- opcjonalne, spersonalizowane powitania i komentarze LLM botów przy
+  najważniejszych momentach oraz zejściu z ulubionego repertuaru,
 - kreator botów wspierany przez LLM oraz trwały katalog profili w PostgreSQL,
 - lokalny katalog 3790 linii debiutowych z projektu `lichess-org/chess-openings`,
 - przekazanie zakończonej partii z botem bezpośrednio do trybu analizy.
@@ -73,7 +74,6 @@ Pełna konfiguracja może wyglądać tak:
 ```env
 OPENROUTER_API_KEY=sk-or-...
 LLM_MODEL=google/gemini-3-flash-preview
-BOT_COMMENTARY_MODEL=sao10k/l3-lunaris-8b
 LICHESS_API_TOKEN=
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
@@ -87,7 +87,7 @@ POSTGRES_CONNECT_TIMEOUT=5
 `LLM_MODEL` jest opcjonalny. Jeśli go nie ustawisz, backend użyje modelu
 domyślnego z kodu. Jest to wewnętrzne ustawienie operatora: frontend nie ujawnia
 identyfikatora modelu ani cen tokenów i nie pozwala klientowi wskazać modelu.
-`BOT_COMMENTARY_MODEL` wybiera model krótkich komentarzy w trybie gry z botem.
+Ten sam `LLM_MODEL` obsługuje analizę, tworzenie profili oraz wypowiedzi botów.
 Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez niego, ale token pozwala autoryzować zapytania.
 
 Profile botów, zakończone partie, pełne analizy i rozmowy RajkoAI przypisane do
