@@ -23,6 +23,41 @@ export interface AdminUser {
   plan?: PlanSummary;
 }
 
+export interface AdminStatistics {
+  generated_at: string;
+  users: {
+    total: number;
+    verified: number;
+    new_7d: number;
+    new_30d: number;
+    active_7d: number;
+    active_30d: number;
+  };
+  games: {
+    total: number;
+    users: number;
+    analyzed: number;
+    analysis_rate: number;
+    analyses: number;
+    chat_messages: number;
+    by_source: Array<{ source: string; count: number }>;
+  };
+  ai: {
+    period_days: number;
+    operations: number;
+    users: number;
+    total_tokens: number;
+    openrouter_cost_credits: number;
+    by_key: Array<{ key: string; operations: number; users: number }>;
+  };
+  daily: Array<{
+    date: string;
+    registrations: number;
+    games: number;
+    ai_operations: number;
+  }>;
+}
+
 export const getMyPlan = () =>
   axios.get<PlanSummary>(`${API_URL}/auth/plan`).then((response) => response.data);
 
@@ -39,6 +74,11 @@ export const getAdminUsers = async (): Promise<AdminUser[]> => {
     },
   }));
 };
+
+export const getAdminStatistics = () =>
+  axios
+    .get<AdminStatistics>(`${API_URL}/admin/statistics`)
+    .then((response) => response.data);
 
 export const grantPremium = (userId: string, days: number, reason: string) =>
   axios.post(`${API_URL}/admin/users/${userId}/premium`, { days, reason });

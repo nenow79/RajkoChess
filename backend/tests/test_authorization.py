@@ -126,7 +126,11 @@ class RolePolicyTests(unittest.TestCase):
 
     def test_admin_read_routes_require_session_cookie(self):
         paths = app.openapi()["paths"]
-        for path in ("/api/admin/users", "/api/admin/audit-log"):
+        for path in (
+            "/api/admin/users",
+            "/api/admin/audit-log",
+            "/api/admin/statistics",
+        ):
             self.assertIn({"SessionCookie": []}, paths[path]["get"].get("security", []))
 
     def test_audit_log_has_no_mutating_api(self):

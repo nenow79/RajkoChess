@@ -29,8 +29,17 @@ from admin.schemas import (
     EntitlementUpdate,
     PremiumGrantRequest,
 )
+from admin.statistics import beta_statistics
 
 router = APIRouter(prefix="/api/admin", tags=["Administration"])
+
+
+@router.get("/statistics")
+async def get_statistics(
+    current: Annotated[CurrentAuth, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    return await beta_statistics(db)
 
 
 def user_response(
