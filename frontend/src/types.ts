@@ -147,6 +147,7 @@ export interface BotProfile {
   description: string;
   avatar: string;
   target_elo: number;
+  extra_weakening: boolean;
   style: BotStyle;
   openings: BotOpening[];
   phrases: Record<string, string>;
@@ -160,7 +161,7 @@ export interface BotProfile {
 
 export type BotDraft = Pick<
   BotProfile,
-  "name" | "description" | "avatar" | "target_elo" | "style" | "openings" | "phrases"
+  "name" | "description" | "avatar" | "target_elo" | "extra_weakening" | "style" | "openings" | "phrases"
 >;
 
 export interface BotGame {

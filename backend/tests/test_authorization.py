@@ -114,6 +114,7 @@ class RolePolicyTests(unittest.TestCase):
             ("/api/admin/users/{user_id}", "patch"),
             ("/api/admin/users/{user_id}/entitlements/{key}", "put"),
             ("/api/admin/bots/{bot_id}/inspect", "post"),
+            ("/api/admin/settings/bot-strength", "put"),
         ):
             operation = paths[path][method]
             self.assertIn({"SessionCookie": []}, operation.get("security", []))
@@ -130,6 +131,7 @@ class RolePolicyTests(unittest.TestCase):
             "/api/admin/users",
             "/api/admin/audit-log",
             "/api/admin/statistics",
+            "/api/admin/settings/bot-strength",
         ):
             self.assertIn({"SessionCookie": []}, paths[path]["get"].get("security", []))
 

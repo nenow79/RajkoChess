@@ -6,7 +6,7 @@ import { getAuthErrorMessage } from "../auth/api";
 import type { BotDraft, BotProfile, BotStyleKey, BotVisibility, OpeningSearchResult, PlayerColor } from "../types";
 
 const EMPTY: BotDraft = {
-  name: "", description: "", avatar: "🤖", target_elo: 1400,
+  name: "", description: "", avatar: "🤖", target_elo: 1400, extra_weakening: false,
   style: { aggression: 50, tacticality: 50, risk: 50, materialism: 50, simplification: 50 },
   openings: [], phrases: {},
 };
@@ -90,6 +90,7 @@ export default function BotCreator({ editingBot, onSaved, onClose }: BotCreatorP
             <label>Orientacyjne Elo<input type="number" min="800" max="2800" value={draft.target_elo} onChange={e => setDraft({ ...draft, target_elo: Number(e.target.value) })} /></label>
           </div>
           <label>Opis<textarea rows={3} value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} /></label>
+          <label className="bot-strength-toggle"><input type="checkbox" checked={draft.extra_weakening} onChange={e => setDraft({ ...draft, extra_weakening: e.target.checked })} /><span><strong>Dodatkowe osłabienie</strong><small>Więcej ludzkich niedokładności, odejść od repertuaru i okazjonalnych błędów. Najbardziej odczuwalne poniżej 1320 Elo.</small></span></label>
           <div className="style-grid">{(Object.entries(draft.style) as [BotStyleKey, number][]).map(([key, value]) => <label key={key}>{LABELS[key]}: {value}<input type="range" min="0" max="100" value={value} onChange={e => setDraft({ ...draft, style: { ...draft.style, [key]: Number(e.target.value) } })} /></label>)}</div>
           <h3>Ulubione otwarcia</h3>
           <div className="opening-search"><select value={openingColor} onChange={e => setOpeningColor(e.target.value as PlayerColor)}><option value="white">Białymi</option><option value="black">Czarnymi</option></select><input value={openingQuery} onChange={e => { setOpeningQuery(e.target.value); if (e.target.value.trim().length < 2) setOpeningResults([]); }} placeholder="Szukaj po nazwie lub ECO" /></div>

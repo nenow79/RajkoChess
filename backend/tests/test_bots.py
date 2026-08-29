@@ -1,13 +1,23 @@
 import tempfile
 import unittest
+from os import environ
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import chess
 import chess.engine
-from chess_logic.bot_game import BotGameManager, choose_bot_move, opening_plan_moves
+from chess_logic.bot_game import (
+    BotGameManager,
+    choose_bot_move,
+    effective_bot_elo,
+    opening_plan_moves,
+    opening_repertoire_status,
+)
+from chess_logic.llm_agent import LLMResult
+from chess_logic.runtime_settings import get_bot_global_elo_offset
 from chess_logic.bots import BotStore
 from chess_logic.openings import search_openings
+from db.models import RuntimeSetting
 
 
 class BotStoreTests(unittest.TestCase):
@@ -25,6 +35,7 @@ class BotStoreTests(unittest.TestCase):
             "description": "Bot do testów",
             "avatar": "🧪",
             "target_elo": 50,
+            "extra_weakening": True,
             "style": {"aggression": 999},
             "openings": [],
             "phrases": {},
@@ -33,6 +44,7 @@ class BotStoreTests(unittest.TestCase):
         self.assertIsNotNone(created)
         assert created is not None
         self.assertEqual(created["target_elo"], 800)
+        self.assertTrue(created["extra_weakening"])
         self.assertEqual(created["style"]["aggression"], 100)
         created["name"] = "Zmieniony"
         updated = self.store.update(created["id"], created)
@@ -49,6 +61,22 @@ class BotStoreTests(unittest.TestCase):
 
 
 class BotGameTests(unittest.IsolatedAsyncioTestCase):
+    def test_global_elo_offset_defaults_to_minus_100_and_is_configurable(self):
+        with patch.dict(environ, {}, clear=True):
+            self.assertEqual(effective_bot_elo({"target_elo": 1500}), 1400)
+        with patch.dict(environ, {"BOT_GLOBAL_ELO_OFFSET": "-250"}):
+            self.assertEqual(effective_bot_elo({"target_elo": 1500}), 1250)
+
+    async def test_database_elo_offset_overrides_environment(self):
+        db = AsyncMock()
+        db.get.return_value = RuntimeSetting(
+            key="bot_global_elo_offset", value={"offset": -180}
+        )
+
+        self.assertEqual(
+            await get_bot_global_elo_offset(db), (-180, "database")
+        )
+
     def test_opening_plan_survives_opponent_deviation(self):
         board = chess.Board()
         for uci in ("d2d4", "g8f6", "g1f3", "d7d6"):
@@ -71,8 +99,11 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
             ]
         }
         self.assertEqual(opening_plan_moves(board, profile), [])
+        self.assertEqual(
+            opening_repertoire_status(board, profile, chess.BLACK), "deviated"
+        )
 
-    async def test_low_elo_bot_still_chooses_an_engine_candidate(self):
+    async def test_low_elo_bot_uses_minimum_limited_engine_strength(self):
         board = chess.Board()
         profile = {
             "target_elo": 800,
@@ -104,6 +135,44 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
         ):
             move = await choose_bot_move(board, profile)
         self.assertEqual(move, candidate)
+        engine.configure.assert_awaited_once_with(
+            {"UCI_LimitStrength": True, "UCI_Elo": 1320}
+        )
+
+    async def test_extra_weakening_expands_the_candidate_pool(self):
+        board = chess.Board()
+        profile = {
+            "target_elo": 900,
+            "extra_weakening": True,
+            "openings": [],
+            "style": {
+                "aggression": 50,
+                "tacticality": 50,
+                "risk": 50,
+                "materialism": 50,
+                "simplification": 50,
+            },
+        }
+        candidate = chess.Move.from_uci("e2e4")
+        engine = AsyncMock()
+        engine.analyse.return_value = [
+            {
+                "pv": [candidate],
+                "score": chess.engine.PovScore(chess.engine.Cp(20), chess.WHITE),
+            }
+        ]
+        engine.quit = AsyncMock()
+        with (
+            patch("chess_logic.bot_game.os.path.exists", return_value=True),
+            patch("chess_logic.bot_game.os.getenv", return_value="/stockfish"),
+            patch(
+                "chess_logic.bot_game.chess.engine.popen_uci",
+                return_value=(None, engine),
+            ),
+        ):
+            move = await choose_bot_move(board, profile)
+        self.assertEqual(move, candidate)
+        self.assertEqual(engine.analyse.await_args.kwargs["multipv"], 20)
 
     async def test_player_and_bot_moves_are_atomic_and_sanitized(self):
         store_dir = tempfile.TemporaryDirectory()
@@ -111,12 +180,15 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
             bot = BotStore(str(Path(store_dir.name) / "bots.sqlite3")).list()[0]
             manager = BotGameManager()
 
-            async def fake_move(board, profile, rng=None):
+            async def fake_move(board, profile, rng=None, elo_offset=None):
                 self.assertEqual(profile["id"], bot["id"])
+                self.assertEqual(elo_offset, -180)
                 return chess.Move.from_uci("e7e5")
 
             with patch("chess_logic.bot_game.choose_bot_move", fake_move):
-                started = await manager.start("session", bot, "white")
+                started = await manager.start(
+                    "session", bot, "white", elo_offset=-180
+                )
                 self.assertEqual(started["history"], [])
                 response = await manager.move("session", "e2e4")
             self.assertEqual(response["history"], ["e2e4", "e7e5"])
@@ -135,29 +207,75 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
             bot = BotStore(str(Path(store_dir.name) / "bots.sqlite3")).list()[0]
             manager = BotGameManager()
 
-            async def fake_move(board, profile, rng=None):
+            async def fake_move(board, profile, rng=None, elo_offset=None):
                 return chess.Move.from_uci("e7e5")
 
             event = {"type": "poważny blunder", "played_move_san": "e4"}
             with (
                 patch("chess_logic.bot_game.choose_bot_move", fake_move),
                 patch(
+                    "chess_logic.bot_game.generate_bot_game_greeting",
+                    return_value=LLMResult(text="Zaczynajmy.", usage={}),
+                ) as greeting,
+                patch(
                     "chess_logic.bot_game.detect_commentary_event", return_value=event
                 ) as detect,
                 patch(
                     "chess_logic.bot_game.generate_bot_move_commentary",
-                    return_value="Tego pionka będzie ci brakować.",
+                    return_value=LLMResult(
+                        text="Tego pionka będzie ci brakować.", usage={}
+                    ),
                 ) as generate,
             ):
-                await manager.start("session", bot, "white", llm_commentary=True)
+                started = await manager.start(
+                    "session", bot, "white", llm_commentary=True
+                )
                 response = await manager.move("session", "e2e4")
 
+            greeting.assert_awaited_once()
+            self.assertEqual(started["llm_commentary"], "Zaczynajmy.")
             detect.assert_awaited_once()
             generate.assert_awaited_once()
             self.assertTrue(response["llm_commentary_enabled"])
             self.assertEqual(
                 response["llm_commentary"], "Tego pionka będzie ci brakować."
             )
+        finally:
+            store_dir.cleanup()
+
+    async def test_bot_comments_once_when_game_leaves_favorite_opening(self):
+        store_dir = tempfile.TemporaryDirectory()
+        try:
+            bot = BotStore(str(Path(store_dir.name) / "bots.sqlite3")).list()[1]
+            manager = BotGameManager()
+
+            async def fake_move(board, profile, rng=None, elo_offset=None):
+                return chess.Move.from_uci("d7d5")
+
+            with (
+                patch("chess_logic.bot_game.choose_bot_move", fake_move),
+                patch(
+                    "chess_logic.bot_game.generate_bot_game_greeting",
+                    return_value=LLMResult(text="Czekam na twój ruch.", usage={}),
+                ),
+                patch(
+                    "chess_logic.bot_game.detect_commentary_event", return_value=None
+                ),
+                patch(
+                    "chess_logic.bot_game.generate_bot_move_commentary",
+                    return_value=LLMResult(
+                        text="Wolałbym sycylijską, ale poradzę sobie także tutaj.",
+                        usage={},
+                    ),
+                ) as generate,
+            ):
+                await manager.start("session", bot, "white", llm_commentary=True)
+                response = await manager.move("session", "d2d4")
+
+            event = generate.await_args.kwargs["event"]
+            self.assertEqual(event["type"], "left_favorite_opening")
+            self.assertTrue(event["preferred_openings"])
+            self.assertIn("sycylijską", response["llm_commentary"].lower())
         finally:
             store_dir.cleanup()
 

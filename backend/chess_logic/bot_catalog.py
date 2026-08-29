@@ -69,6 +69,7 @@ def bot_response(bot: Bot, user: User) -> dict:
         "description": bot.description,
         "avatar": bot.avatar,
         "target_elo": bot.target_elo,
+        "extra_weakening": bot.extra_weakening,
         "style": bot.style,
         "openings": openings,
         "phrases": bot.phrases,

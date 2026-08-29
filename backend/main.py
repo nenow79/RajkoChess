@@ -73,6 +73,7 @@ from chess_logic.openings import (
     resolve_opening,
     search_openings,
 )
+from chess_logic.runtime_settings import get_bot_global_elo_offset
 from db.models import BotVisibility, GameSource
 from db.session import database_healthcheck, get_db_session
 from dotenv import load_dotenv
@@ -356,6 +357,7 @@ async def start_bot_game(
     try:
         model = await get_visible_bot(db, bot_id=request.bot_id, user=current.user)
         bot = bot_response(model, current.user)
+        elo_offset, _ = await get_bot_global_elo_offset(db)
     except BotNotFoundError:
         raise HTTPException(status_code=404, detail="Nie znaleziono bota")
     try:
@@ -367,12 +369,22 @@ async def start_bot_game(
             lock_ttl_seconds=60,
         ):
             async with bot_games.lock(session_id):
-                return await bot_games.start(
+                response = await bot_games.start(
                     session_id,
                     bot,
                     request.player_color,
                     llm_commentary=request.llm_commentary,
+                    elo_offset=elo_offset,
                 )
+                commentary_usage = bot_games.take_commentary_usage(session_id)
+        if response.get("llm_commentary"):
+            await record_usage(
+                db,
+                user=current.user,
+                key="ai_bot_commentary",
+                details=commentary_usage,
+            )
+        return response
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -393,9 +405,15 @@ async def bot_game_move(
     try:
         game = bot_games.games.get(session_id)
         if game and game.llm_commentary_enabled:
-            await ensure_monthly_available(
-                db, user=current.user, key="ai_bot_commentary"
-            )
+            try:
+                await ensure_monthly_available(
+                    db, user=current.user, key="ai_bot_commentary"
+                )
+            except HTTPException as exc:
+                if exc.status_code != status.HTTP_429_TOO_MANY_REQUESTS:
+                    raise
+                # Wyczerpanie dodatku nie może zablokować trwającej partii.
+                game.llm_commentary_enabled = False
         async with limited_operation(
             db,
             user=current.user,
@@ -405,8 +423,14 @@ async def bot_game_move(
         ):
             async with bot_games.lock(session_id):
                 response = await bot_games.move(session_id, request.uci)
+                commentary_usage = bot_games.take_commentary_usage(session_id)
         if response.get("llm_commentary"):
-            await record_usage(db, user=current.user, key="ai_bot_commentary")
+            await record_usage(
+                db,
+                user=current.user,
+                key="ai_bot_commentary",
+                details=commentary_usage,
+            )
         return response
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

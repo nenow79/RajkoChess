@@ -3,11 +3,14 @@ import { useEffect, useState } from "react";
 import { getAuthErrorMessage } from "../auth/api";
 import {
   getAdminStatistics,
+  getBotStrengthSetting,
   getAdminUsers,
   grantPremium,
   revokePremium,
+  updateBotStrengthSetting,
   type AdminStatistics,
   type AdminUser,
+  type BotStrengthSetting,
 } from "../admin/api";
 
 interface AdminPanelProps {
@@ -33,20 +36,24 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [view, setView] = useState<"statistics" | "users">("statistics");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [statistics, setStatistics] = useState<AdminStatistics | null>(null);
+  const [botStrength, setBotStrength] = useState<BotStrengthSetting | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyUser, setBusyUser] = useState<string | null>(null);
+  const [busySetting, setBusySetting] = useState(false);
   const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
-      const [userItems, stats] = await Promise.all([
+      const [userItems, stats, strengthSetting] = await Promise.all([
         getAdminUsers(),
         getAdminStatistics(),
+        getBotStrengthSetting(),
       ]);
       setUsers(userItems);
       setStatistics(stats);
+      setBotStrength(strengthSetting);
     } catch (requestError) {
       setError(getAuthErrorMessage(requestError, "Nie udało się pobrać danych panelu."));
     } finally {
@@ -56,11 +63,12 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([getAdminUsers(), getAdminStatistics()])
-      .then(([userItems, stats]) => {
+    Promise.all([getAdminUsers(), getAdminStatistics(), getBotStrengthSetting()])
+      .then(([userItems, stats, strengthSetting]) => {
         if (!active) return;
         setUsers(userItems);
         setStatistics(stats);
+        setBotStrength(strengthSetting);
       })
       .catch((requestError) => {
         if (active) {
@@ -114,6 +122,26 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     1,
     ...(statistics?.daily.flatMap((day) => [day.registrations, day.games, day.ai_operations]) ?? []),
   );
+
+  const saveBotStrength = async () => {
+    if (!botStrength) return;
+    const value = botStrength.bot_global_elo_offset;
+    if (!Number.isInteger(value) || value < botStrength.minimum || value > botStrength.maximum) {
+      setError(`Korekta musi być liczbą całkowitą od ${botStrength.minimum} do ${botStrength.maximum}.`);
+      return;
+    }
+    const reason = window.prompt("Powód zmiany globalnej siły botów:", "Kalibracja na podstawie feedbacku");
+    if (!reason || reason.trim().length < 3) return;
+    setBusySetting(true);
+    setError("");
+    try {
+      setBotStrength(await updateBotStrengthSetting(value, reason.trim()));
+    } catch (requestError) {
+      setError(getAuthErrorMessage(requestError, "Nie udało się zapisać siły botów."));
+    } finally {
+      setBusySetting(false);
+    }
+  };
 
   return (
     <div className="admin-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-title">
@@ -176,6 +204,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
           </div>
         ) : view === "users" ? (
           <>
+            {botStrength && <section className="admin-settings-card"><div><h3>Globalna siła botów</h3><p>Korekta jest odejmowana lub dodawana do Elo każdego bota. Zmiana obejmie nowe partie bez restartu aplikacji.</p><small>Źródło: {botStrength.source === "database" ? "panel administratora" : "konfiguracja środowiska"}</small></div><label>Korekta Elo<input type="number" min={botStrength.minimum} max={botStrength.maximum} step="10" value={botStrength.bot_global_elo_offset} onChange={event => setBotStrength({ ...botStrength, bot_global_elo_offset: Number(event.target.value) })} /></label><button type="button" disabled={busySetting} onClick={() => void saveBotStrength()}>{busySetting ? "Zapisuję…" : "Zapisz"}</button></section>}
             <p className="admin-note">Przyznanie kolejnego okresu przedłuża aktywne Premium. Po terminie konto automatycznie wraca do Free.</p>
             <div className="admin-user-list">
               {users.map((user) => (

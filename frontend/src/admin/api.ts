@@ -58,6 +58,13 @@ export interface AdminStatistics {
   }>;
 }
 
+export interface BotStrengthSetting {
+  bot_global_elo_offset: number;
+  source: "database" | "environment";
+  minimum: number;
+  maximum: number;
+}
+
 export const getMyPlan = () =>
   axios.get<PlanSummary>(`${API_URL}/auth/plan`).then((response) => response.data);
 
@@ -85,3 +92,12 @@ export const grantPremium = (userId: string, days: number, reason: string) =>
 
 export const revokePremium = (userId: string, reason: string) =>
   axios.delete(`${API_URL}/admin/users/${userId}/premium`, { data: { reason } });
+
+export const getBotStrengthSetting = () =>
+  axios.get<BotStrengthSetting>(`${API_URL}/admin/settings/bot-strength`).then((response) => response.data);
+
+export const updateBotStrengthSetting = (botGlobalEloOffset: number, reason: string) =>
+  axios.put<BotStrengthSetting>(`${API_URL}/admin/settings/bot-strength`, {
+    bot_global_elo_offset: botGlobalEloOffset,
+    reason,
+  }).then((response) => response.data);

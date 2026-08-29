@@ -44,6 +44,7 @@ class AuthModelMetadataTests(unittest.TestCase):
                 "analyses",
                 "chat_messages",
                 "chess_platform_accounts",
+                "runtime_settings",
             },
         )
 
@@ -144,6 +145,7 @@ class AuthModelMetadataTests(unittest.TestCase):
         self.assertEqual(
             cast(Enum, visibility_type).enums, [item.value for item in BotVisibility]
         )
+        self.assertFalse(inspect(Bot).columns.extra_weakening.nullable)
 
     def test_entitlements_are_unique_per_user_and_audit_is_append_only(self):
         entitlement_constraints = {

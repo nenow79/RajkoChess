@@ -23,6 +23,7 @@ interface CreatorState {
 const PROMOTION_OPTIONS: [PieceSymbol, string, string][] = [
   ["q", "Hetman", "♛"], ["r", "Wieża", "♜"], ["b", "Goniec", "♝"], ["n", "Skoczek", "♞"],
 ];
+const MOVE_ANIMATION_MS = 400;
 
 export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProps) {
   const [bots, setBots] = useState<BotProfile[]>([]);
@@ -76,6 +77,8 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
   const isPlayerTurn = game?.status === "active" && game.turn === game.player_color && !busy;
   const orientation = boardOrientation || game?.player_color || "white";
   const activeSelectedSquare = selectedSquare && selectedSquare.fen === game?.fen && !busy ? selectedSquare.square : null;
+  const activeBotSpeech = game?.llm_commentary || game?.bot_message || null;
+  const isLlmSpeech = Boolean(game?.llm_commentary);
 
   const legalTargets = useMemo(() => {
     if (!activeSelectedSquare || !isPlayerTurn) return [];
@@ -118,15 +121,39 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
   };
 
   const submitMove = (from: Square, to: Square, promotion?: PieceSymbol) => {
-    if (!isPlayerTurn) return false;
+    if (!isPlayerTurn || !game) return false;
     let result;
     try { result = board.move({ from, to, promotion }); } catch { return false; }
     if (!result) return false;
     const uci = `${from}${to}${result.promotion || ""}`;
+    const previousGame = game;
+    const optimisticGame: BotGame = {
+      ...game,
+      fen: board.fen(),
+      history: [...game.history, uci],
+      turn: board.turn() === "w" ? "white" : "black",
+      last_move_uci: uci,
+      bot_message: null,
+      llm_commentary: null,
+    };
+    const submittedAt = Date.now();
+
+    setGame(optimisticGame);
+    setSelectedSquare(null);
     setBusy(true); setError("");
     axios.post<BotGame>(`${API_URL}/bot-games/move`, { uci })
-      .then(res => setGame(res.data))
-      .catch(err => setError(getAuthErrorMessage(err, "Ruch został odrzucony.")))
+      .then(async res => {
+        const includesBotMove = res.data.history.length > optimisticGame.history.length;
+        const remainingAnimationTime = MOVE_ANIMATION_MS - (Date.now() - submittedAt);
+        if (includesBotMove && remainingAnimationTime > 0) {
+          await new Promise<void>(resolve => window.setTimeout(resolve, remainingAnimationTime));
+        }
+        setGame(res.data);
+      })
+      .catch(err => {
+        setGame(previousGame);
+        setError(getAuthErrorMessage(err, "Ruch został odrzucony."));
+      })
       .finally(() => setBusy(false));
     return true;
   };
@@ -197,18 +224,30 @@ export default function BotGameMode({ onModeChange, onAnalyze }: BotGameModeProp
           <div className="bot-style-summary"><span>Agresja {bot.style.aggression}</span><span>Taktyka {bot.style.tacticality}</span><span>Ryzyko {bot.style.risk}</span></div>
           {(bot.can_edit || bot.can_delete) && <div className="bot-card-actions">{bot.can_edit && <button onClick={event => { event.stopPropagation(); setCreator({ mode: "edit", bot }); }}>Edytuj</button>}{bot.can_delete && <button onClick={event => { event.stopPropagation(); removeBot(bot); }}>Usuń</button>}</div>}
         </article>)}</div>
-        {selectedBot && <section className="start-game-panel"><div><strong>Zagrasz przeciwko: {selectedBot.avatar} {selectedBot.name}</strong><span>Siła jest orientacyjna i zależy od pozycji.</span></div><label>Twój kolor<select value={playerColor} onChange={e => setPlayerColor(e.target.value as PlayerColorChoice)}><option value="random">Losowy</option><option value="white">Białe</option><option value="black">Czarne</option></select></label><label className="commentary-toggle"><input type="checkbox" role="switch" checked={llmCommentary} disabled={plan?.base_plan !== "premium" && plan?.key !== "admin"} onChange={e => setLlmCommentary(e.target.checked)} /><span><strong>Komentarze LLM</strong><small>{plan?.base_plan === "premium" || plan?.key === "admin" ? "Tylko ważne momenty" : "Funkcja Premium"}</small></span></label><button onClick={start} disabled={busy}>{busy ? "Bot przygotowuje ruch..." : "Rozpocznij partię"}</button></section>}
+        {selectedBot && <section className="start-game-panel"><div><strong>Zagrasz przeciwko: {selectedBot.avatar} {selectedBot.name}</strong><span>Siła jest orientacyjna i zależy od pozycji.</span></div><label>Twój kolor<select value={playerColor} onChange={e => setPlayerColor(e.target.value as PlayerColorChoice)}><option value="random">Losowy</option><option value="white">Białe</option><option value="black">Czarne</option></select></label><label className="commentary-toggle"><input type="checkbox" role="switch" checked={llmCommentary} disabled={plan?.base_plan !== "premium" && plan?.key !== "admin"} onChange={e => setLlmCommentary(e.target.checked)} /><span><strong>Komentarze LLM</strong><small>{plan?.base_plan === "premium" || plan?.key === "admin" ? "Powitanie i ważne momenty" : "Funkcja Premium"}</small></span></label><button onClick={start} disabled={busy}>{busy ? "Bot przygotowuje ruch..." : "Rozpocznij partię"}</button></section>}
       </main> : <main className="bot-game-layout">
         <section className="bot-board-column">
-          <div className="bot-game-status"><div className="bot-avatar small">{game.bot.avatar}</div><div><strong>{game.bot.name} · ≈ {game.bot.target_elo} Elo</strong><span>{game.status === "active" ? (busy ? "Bot myśli..." : isPlayerTurn ? "Twój ruch" : "Ruch bota") : `Koniec partii · ${game.result}`}</span></div></div>
-          <div className="board-wrapper"><Chessboard position={game.fen} onPieceDrop={move} onSquareClick={handleSquareClick} customSquareStyles={squareStyles} arePiecesDraggable={isPlayerTurn} boardOrientation={orientation} animationDuration={400} /></div>
+          <div className={`bot-game-status${activeBotSpeech ? " has-speech" : ""}`}>
+            <div className="bot-avatar small">{game.bot.avatar}</div>
+            <div className="bot-game-identity">
+              <strong>{game.bot.name} · ≈ {game.bot.target_elo} Elo</strong>
+              <span>{game.status === "active" ? (busy ? "Bot myśli..." : isPlayerTurn ? "Twój ruch" : "Ruch bota") : `Koniec partii · ${game.result}`}</span>
+            </div>
+            <div className="bot-speech-slot">
+              {activeBotSpeech && (
+                <div className={`bot-inline-speech${isLlmSpeech ? " llm" : ""}`} aria-live="polite">
+                  {isLlmSpeech && <span className="bot-speech-spark" aria-label="Wypowiedź generowana przez AI" title="Wypowiedź generowana przez AI">✦</span>}
+                  <span className="bot-speech-copy">„{activeBotSpeech}”</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="board-wrapper"><Chessboard position={game.fen} onPieceDrop={move} onSquareClick={handleSquareClick} customSquareStyles={squareStyles} arePiecesDraggable={isPlayerTurn} boardOrientation={orientation} animationDuration={MOVE_ANIMATION_MS} /></div>
           <button type="button" className="flip-board-btn" onClick={() => setBoardOrientation(current => (current || game.player_color) === "white" ? "black" : "white")}>Obróć szachownicę · na dole: {orientation === "white" ? "białe" : "czarne"}</button>
-          {game.bot_message && <div className="bot-speech">{game.bot.avatar} „{game.bot_message}”</div>}
-          {game.llm_commentary && <div className="bot-speech llm-commentary"><span>✦ komentarz LLM</span>{game.bot.avatar} „{game.llm_commentary}”</div>}
           {error && <p className="form-error">{error}</p>}
           {game.status === "active" ? <div className="game-action-row"><button onClick={() => action("draw-offer")} disabled={busy}>Zaproponuj remis</button><button className="danger-action" onClick={() => action("resign")} disabled={busy}>Poddaj partię</button></div> : <div className="game-action-row"><button onClick={() => setGame(null)}>Nowa partia</button><button className="primary-action" onClick={analyze} disabled={busy}>Przeanalizuj partię</button></div>}
         </section>
-        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p>{game.llm_commentary_enabled && <p className="commentary-active">✦ Komentarze ważnych momentów są włączone</p>}<h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{moveHistory.length ? moveHistory.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
+        <aside className="game-side-card"><h2>{game.bot.avatar} {game.bot.name}</h2><p>{game.bot.description}</p>{game.llm_commentary_enabled && <p className="commentary-active">✦ Powitanie i komentarze ważnych momentów są włączone</p>}<h3>Charakter gry</h3>{Object.entries(game.bot.style).map(([key, value]) => <div className="style-meter" key={key}><span>{key}</span><i><b style={{ width: `${value}%` }} /></i></div>)}<h3>Ulubione otwarcia</h3>{game.bot.openings?.length ? <div className="favorite-openings">{game.bot.openings.map(opening => <div key={`${opening.color}-${opening.opening_id}`}><span>{opening.color === "white" ? "Białymi" : "Czarnymi"}</span><strong>{opening.name || opening.opening_id}</strong>{opening.eco && <small>{opening.eco}</small>}</div>)}</div> : <p className="empty-side-section">Brak przypisanego repertuaru.</p>}<h3>Historia</h3><div className="move-history">{moveHistory.length ? moveHistory.map((san, i) => <span key={i}>{i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ""}{san}</span>) : <span className="empty-side-section">Partia jeszcze się nie rozpoczęła.</span>}</div></aside>
       </main>}
       {error && !game && <p className="global-error">{error}</p>}
       <BuildFooter />

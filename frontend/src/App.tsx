@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { Chess, type Square } from "chess.js";
 import axios from "axios";
 
@@ -64,8 +64,30 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [isFenPosition, setIsFenPosition] = useState(false);
   const [gameNavigation, setGameNavigation] = useState<GameNavigation | null>(null);
   const [gameAnalysis, setGameAnalysis] = useState<GameAnalysis | null>(null);
+  const gameAnalysisRequestRef = useRef(0);
   const [navigationMove, setNavigationMove] = useState<string | null>(null);
   const [isVariationMode, setIsVariationMode] = useState(false);
+
+  const clearGameAnalysis = useCallback(() => {
+    gameAnalysisRequestRef.current += 1;
+    setGameAnalysis(null);
+  }, []);
+
+  const loadStoredGameAnalysis = useCallback((gameId: string) => {
+    const requestId = gameAnalysisRequestRef.current + 1;
+    gameAnalysisRequestRef.current = requestId;
+    setGameAnalysis(null);
+
+    void axios.get<{ analyses: Array<{ engine_result: GameAnalysis }> }>(`${API_URL}/games/${gameId}`)
+      .then((response) => {
+        if (gameAnalysisRequestRef.current !== requestId) return;
+        setGameAnalysis(response.data.analyses[0]?.engine_result ?? null);
+      })
+      .catch((err) => {
+        if (gameAnalysisRequestRef.current !== requestId) return;
+        setError(getAuthErrorMessage(err, "Nie udało się wczytać zapisanej analizy partii."));
+      });
+  }, []);
 
   useEffect(() => {
     setChessComUsername((current) => (
@@ -110,7 +132,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const clearImportedGameContext = () => {
     setImportedGame(null);
     setGameNavigation(null);
-    setGameAnalysis(null);
+    clearGameAnalysis();
     setNavigationMove(null);
     setIsVariationMode(false);
   };
@@ -181,6 +203,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             moveLabel: res.data.move_label || "Pozycja startowa",
           });
           setIsVariationMode(Boolean(res.data.in_variation));
+          loadStoredGameAnalysis(res.data.game_id);
         }
         return Promise.allSettled([
           axios.get(`${API_URL}/explorer`)
@@ -192,7 +215,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         ]);
       })
       .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się odtworzyć pozycji.")));
-  }, []); // The workspace is remounted when entering analysis mode.
+  }, [loadStoredGameAnalysis]); // The workspace is remounted when entering analysis mode.
 
   const handleImportGame = (selectedGame: ChessComGame) => {
     axios.post(`${API_URL}/import-game`, {
@@ -205,7 +228,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         setBoardKey(prev => prev + 1);
         setImportedGame({ ...selectedGame, source: "chesscom", storedGameId: res.data.game_id });
         setIsFenPosition(false);
-        setGameAnalysis(null);
+        loadStoredGameAnalysis(res.data.game_id);
         setNavigationMove(null);
         setIsVariationMode(false);
         setGameNavigation({
@@ -240,7 +263,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           } else {
             setImportedGame(null);
             setGameNavigation(null);
-            setGameAnalysis(null);
+            clearGameAnalysis();
             setIsVariationMode(false);
           }
           fetchAllData();
@@ -272,7 +295,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         } else {
           setImportedGame(null);
           setGameNavigation(null);
-          setGameAnalysis(null);
+          clearGameAnalysis();
           setIsVariationMode(false);
         }
         fetchAllData();
@@ -289,7 +312,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         setImportedGame(null);
         setIsFenPosition(false);
         setGameNavigation(null);
-        setGameAnalysis(null);
+        clearGameAnalysis();
         setNavigationMove(null);
         setIsVariationMode(false);
         fetchAllData();
@@ -325,7 +348,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       storedGameId: stored.game_id,
     });
     setIsFenPosition(false);
-    setGameAnalysis(null);
+    loadStoredGameAnalysis(stored.game_id);
     setNavigationMove(null);
     setIsVariationMode(false);
     setGameNavigation({
@@ -364,7 +387,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
           storedGameId: response.data.game_id,
         });
         setIsFenPosition(false);
-        setGameAnalysis(null);
+        clearGameAnalysis();
         setNavigationMove(null);
         setIsVariationMode(false);
         setGameNavigation({
@@ -465,6 +488,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             importedGame={importedGame}
             playerUsername={chessComUsername}
             onGameAnalyzed={(analysis) => {
+              gameAnalysisRequestRef.current += 1;
               setGameAnalysis(analysis);
               handleAnalysisMarkerChange(true);
             }}

@@ -88,9 +88,15 @@ class BotStore:
             db.execute("""CREATE TABLE IF NOT EXISTS bots (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
                 avatar TEXT NOT NULL, target_elo INTEGER NOT NULL,
+                extra_weakening INTEGER NOT NULL DEFAULT 0,
                 style_json TEXT NOT NULL, openings_json TEXT NOT NULL,
                 phrases_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )""")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(bots)")}
+            if "extra_weakening" not in columns:
+                db.execute(
+                    "ALTER TABLE bots ADD COLUMN extra_weakening INTEGER NOT NULL DEFAULT 0"
+                )
             db.execute("PRAGMA user_version=1")
             count = db.execute("SELECT COUNT(*) FROM bots").fetchone()[0]
         if count == 0:
@@ -113,11 +119,15 @@ class BotStore:
 
     @staticmethod
     def validate(profile: dict) -> dict:
+        extra_weakening = profile.get("extra_weakening", False)
+        if not isinstance(extra_weakening, bool):
+            raise ValueError("Opcja dodatkowego osłabienia musi być wartością logiczną")
         result = {
             "name": str(profile.get("name", "")).strip()[:80],
             "description": str(profile.get("description", "")).strip()[:1000],
             "avatar": str(profile.get("avatar", "🤖")).strip()[:8] or "🤖",
             "target_elo": min(2800, max(800, int(profile.get("target_elo", 1400)))),
+            "extra_weakening": extra_weakening,
             "style": {
                 key: min(100, max(0, int((profile.get("style") or {}).get(key, 50))))
                 for key in STYLE_KEYS
@@ -163,13 +173,17 @@ class BotStore:
         bot_id = str(uuid.uuid4())
         with self.lock, self._connect() as db:
             db.execute(
-                "INSERT INTO bots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO bots (
+                    id, name, description, avatar, target_elo, extra_weakening,
+                    style_json, openings_json, phrases_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     bot_id,
                     clean["name"],
                     clean["description"],
                     clean["avatar"],
                     clean["target_elo"],
+                    int(clean["extra_weakening"]),
                     json.dumps(clean["style"]),
                     json.dumps(clean["openings"]),
                     json.dumps(clean["phrases"]),
@@ -186,13 +200,15 @@ class BotStore:
         now = datetime.now(timezone.utc).isoformat()
         with self.lock, self._connect() as db:
             db.execute(
-                """UPDATE bots SET name=?,description=?,avatar=?,target_elo=?,style_json=?,
+                """UPDATE bots SET name=?,description=?,avatar=?,target_elo=?,
+                extra_weakening=?,style_json=?,
                 openings_json=?,phrases_json=?,updated_at=? WHERE id=?""",
                 (
                     clean["name"],
                     clean["description"],
                     clean["avatar"],
                     clean["target_elo"],
+                    int(clean["extra_weakening"]),
                     json.dumps(clean["style"]),
                     json.dumps(clean["openings"]),
                     json.dumps(clean["phrases"]),
@@ -223,6 +239,7 @@ class BotStore:
             "description": row["description"],
             "avatar": row["avatar"],
             "target_elo": row["target_elo"],
+            "extra_weakening": bool(row["extra_weakening"]),
             "style": json.loads(row["style_json"]),
             "openings": openings,
             "phrases": json.loads(row["phrases_json"]),
