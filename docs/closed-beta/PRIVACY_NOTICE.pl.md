@@ -13,6 +13,8 @@ Kontakt w sprawach prywatności: `[UZUPEŁNIJ adres e-mail]`.
 ## Jakie dane przetwarzamy
 
 - adres e-mail, status weryfikacji, rolę i ustawienia planu,
+- przy logowaniu Google: identyfikator konta Google oraz przekazane przez Google
+  imię lub nazwę wyświetlaną; Rajko Chess nie przechowuje tokenów Google,
 - bezpieczny skrót hasła, identyfikatory i terminy sesji; aplikacja nie
   przechowuje hasła w postaci jawnej,
 - adres IP i dane techniczne wymagane do ochrony przed nadużyciem, diagnostyki
@@ -39,6 +41,11 @@ których dalsze przechowywanie jest wymagane lub uzasadnione bezpieczeństwem.
 
 Dostęp mogą mieć dostawcy hostingu, poczty transakcyjnej i monitoringu wybrani
 przez administratora: `[UZUPEŁNIJ nazwy dostawców, role i lokalizacje danych]`.
+
+Jeśli użytkownik wybiera logowanie Google, przeglądarka i serwer komunikują się
+z usługami Google w celu potwierdzenia tożsamości. Przed uruchomieniem tej opcji
+administrator powinien uzupełnić Google na liście dostawców oraz zweryfikować
+aktualne warunki przetwarzania i retencji.
 
 Gdy tester korzysta z funkcji AI, pozycja szachowa, treść pytania oraz kontekst
 analizy są wysyłane przez API OpenRouter do wybranego przez backend dostawcy

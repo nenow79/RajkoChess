@@ -131,6 +131,40 @@ cd backend
 ../.venv/bin/python -m scripts.migrate_bots_to_postgres
 ```
 
+### Logowanie Google
+
+Backend obsługuje Google OpenID Connect w przepływie Authorization Code. Nowe
+konto utworzone przez Google otrzymuje od razu potwierdzony adres e-mail i tę
+samą bezpieczną sesję serwerową co konto hasłowe. Jeśli konto o tym e-mailu już
+istnieje, nie jest łączone automatycznie: zaloguj się hasłem i wybierz
+`Ustawienia` → `Podłącz Google`. Wybrane konto Google musi mieć ten sam e-mail.
+
+W Google Cloud Console utwórz dane OAuth typu `Web application`, skonfiguruj
+ekran zgody i dodaj dokładny autoryzowany URI przekierowania. Lokalnie jest to:
+
+```text
+http://localhost:5173/api/auth/google/callback
+```
+
+Następnie ustaw w `backend/.env`:
+
+```dotenv
+GOOGLE_OAUTH_CLIENT_ID=...apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=...
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:5173/api/auth/google/callback
+```
+
+Dla wdrożenia pod `/chess` URI musi wskazywać publiczny adres proxy, np.
+`https://rajko.pl/chess/api/auth/google/callback`, i być identyczny w Google
+Cloud Console oraz konfiguracji backendu. Sekret klienta należy przechowywać
+wyłącznie w chronionym pliku środowiskowym. Po restarcie backendu przycisk
+`Kontynuuj z Google` pojawi się automatycznie.
+
+Przepływ chronią PKCE oraz krótkotrwałe ciasteczka `HttpOnly` z losowymi wartościami
+`state` i `nonce`. Backend wymienia kod bezpośrednio z Google, weryfikuje podpis,
+odbiorcę, wystawcę, ważność i `nonce` tokenu ID, a następnie zapisuje jedynie
+identyfikator dostawcy oraz podstawowe dane konta — nie zapisuje tokenów Google.
+
 ### Test logowania w Swagger UI
 
 Po uruchomieniu backendu otwórz `http://127.0.0.1:8000/docs` i rozwiń sekcję

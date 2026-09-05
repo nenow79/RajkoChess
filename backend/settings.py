@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     public_app_url: str = Field(
         default="http://localhost:5173", validation_alias="PUBLIC_APP_URL"
     )
+    google_oauth_client_id: str = Field(
+        default="", validation_alias="GOOGLE_OAUTH_CLIENT_ID"
+    )
+    google_oauth_client_secret: SecretStr = Field(
+        default=SecretStr(""), validation_alias="GOOGLE_OAUTH_CLIENT_SECRET"
+    )
+    google_oauth_redirect_uri: str = Field(
+        default="http://localhost:5173/api/auth/google/callback",
+        validation_alias="GOOGLE_OAUTH_REDIRECT_URI",
+    )
     smtp_host: str = Field(default="smtp.mail.ovh.net", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=465, gt=0, le=65535, validation_alias="SMTP_PORT")
     smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
@@ -140,6 +150,27 @@ class Settings(BaseSettings):
             )
         self.public_app_url = self.public_app_url.rstrip("/")
         return self
+
+    @property
+    def google_oauth_enabled(self) -> bool:
+        return bool(
+            self.google_oauth_client_id
+            and self.google_oauth_client_secret.get_secret_value()
+            and self.google_oauth_redirect_uri
+        )
+
+    def require_google_oauth(self) -> None:
+        missing = [
+            name
+            for name, value in {
+                "GOOGLE_OAUTH_CLIENT_ID": self.google_oauth_client_id,
+                "GOOGLE_OAUTH_CLIENT_SECRET": self.google_oauth_client_secret.get_secret_value(),
+                "GOOGLE_OAUTH_REDIRECT_URI": self.google_oauth_redirect_uri,
+            }.items()
+            if not value
+        ]
+        if missing:
+            raise RuntimeError("Brak konfiguracji Google OAuth: " + ", ".join(missing))
 
     def require_smtp(self) -> None:
         missing = [

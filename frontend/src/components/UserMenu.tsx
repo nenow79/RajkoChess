@@ -8,8 +8,14 @@ import AccountSettings from "./AccountSettings";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
+  const initialGoogleResult = new URLSearchParams(window.location.search).get("google_auth");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => ({
+    email_mismatch: "Wybrane konto Google ma inny adres e-mail.",
+    identity_conflict: "To konto Google jest już połączone z innym kontem.",
+    link_requires_login: "Sesja wygasła przed podłączeniem Google.",
+  } as Record<string, string>)[initialGoogleResult || ""] || "");
+  const [notice] = useState(() => initialGoogleResult === "linked" ? "Konto Google zostało podłączone." : "");
   const [plan, setPlan] = useState<PlanSummary | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
@@ -22,6 +28,12 @@ export default function UserMenu() {
 
   useEffect(() => {
     void loadPlan();
+    const url = new URL(window.location.href);
+    const googleResult = url.searchParams.get("google_auth");
+    if (googleResult) {
+      url.searchParams.delete("google_auth");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    }
   }, [loadPlan]);
 
   if (!user) return null;
@@ -59,6 +71,7 @@ export default function UserMenu() {
       <button type="button" onClick={() => setSettingsOpen(true)}>Ustawienia</button>
       <button type="button" onClick={handleLogout} disabled={busy}>{busy ? "Wylogowywanie…" : "Wyloguj"}</button>
       {error && <span className="user-menu-error" role="alert">{error}</span>}
+      {notice && <span className="user-menu-notice" role="status">{notice}</span>}
       {planOpen && plan && (
         <div className="plan-usage-popover">
           <strong>Wykorzystanie w tym miesiącu</strong>

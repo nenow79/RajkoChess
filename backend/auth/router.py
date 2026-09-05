@@ -1,12 +1,15 @@
 import logging
 import secrets
 from typing import Annotated
+from urllib.parse import urlencode
 
 from db.models import UserStatus
 from db.session import get_db_session
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from rate_limit import clear_rate_limit, enforce_rate_limit, request_ip
+from settings import get_settings
 
 from auth.cookies import clear_auth_cookies, set_auth_cookies, set_csrf_cookie
 from auth.dependencies import CurrentAuth, csrf_cookie, get_current_auth, require_csrf
@@ -24,9 +27,12 @@ from auth.platform_accounts import (
     upsert_platform_account,
 )
 from auth.schemas import (
+    AuthorizationUrlResponse,
     CsrfResponse,
     EmailVerificationRequest,
     EmailVerificationResendRequest,
+    GoogleIdentityStatusResponse,
+    GoogleOAuthConfigResponse,
     LoginRequest,
     LoginResponse,
     LogoutResponse,
@@ -51,6 +57,7 @@ from auth.service import (
     create_session,
     find_user_for_email_verification,
     find_user_for_password_reset,
+    find_active_session,
     normalize_email,
     register_user,
     reset_password_with_token,
@@ -60,9 +67,220 @@ from auth.service import (
     supersede_password_reset_tokens,
     verify_email_token,
 )
+from auth.google_oauth import (
+    GoogleAccountLinkRequiredError,
+    GoogleEmailMismatchError,
+    GoogleIdentityConflictError,
+    GoogleOAuthError,
+    InactiveGoogleUserError,
+    build_authorization_url,
+    exchange_code_for_claims,
+    has_google_identity,
+    link_google_identity,
+    login_or_register_google_user,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 logger = logging.getLogger(__name__)
+GOOGLE_OAUTH_STATE_COOKIE = "rajko_google_oauth_state"
+GOOGLE_OAUTH_NONCE_COOKIE = "rajko_google_oauth_nonce"
+GOOGLE_OAUTH_VERIFIER_COOKIE = "rajko_google_oauth_verifier"
+GOOGLE_OAUTH_INTENT_COOKIE = "rajko_google_oauth_intent"
+GOOGLE_OAUTH_COOKIE_PATH = "/"
+
+
+def _set_google_oauth_cookies(
+    response: Response, *, state_value: str, nonce: str, code_verifier: str, intent: str
+) -> None:
+    settings = get_settings()
+    common = {
+        "max_age": 600,
+        "httponly": True,
+        "secure": settings.auth_cookie_secure,
+        "samesite": "lax",
+        "path": GOOGLE_OAUTH_COOKIE_PATH,
+    }
+    response.set_cookie(GOOGLE_OAUTH_STATE_COOKIE, state_value, **common)
+    response.set_cookie(GOOGLE_OAUTH_NONCE_COOKIE, nonce, **common)
+    response.set_cookie(GOOGLE_OAUTH_VERIFIER_COOKIE, code_verifier, **common)
+    response.set_cookie(GOOGLE_OAUTH_INTENT_COOKIE, intent, **common)
+
+
+def _clear_google_oauth_cookies(response: Response) -> None:
+    settings = get_settings()
+    for name in (
+        GOOGLE_OAUTH_STATE_COOKIE,
+        GOOGLE_OAUTH_NONCE_COOKIE,
+        GOOGLE_OAUTH_VERIFIER_COOKIE,
+        GOOGLE_OAUTH_INTENT_COOKIE,
+    ):
+        response.delete_cookie(
+            name,
+            path=GOOGLE_OAUTH_COOKIE_PATH,
+            secure=settings.auth_cookie_secure,
+            httponly=True,
+            samesite="lax",
+        )
+
+
+def _frontend_google_redirect(result: str) -> RedirectResponse:
+    settings = get_settings()
+    separator = "&" if "?" in settings.public_app_url else "?"
+    response = RedirectResponse(
+        f"{settings.public_app_url}{separator}{urlencode({'google_auth': result})}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    _clear_google_oauth_cookies(response)
+    return response
+
+
+def _new_google_authorization() -> tuple[str, str, str, str]:
+    state_value = generate_secret()
+    nonce = generate_secret()
+    code_verifier = generate_secret()
+    return (
+        build_authorization_url(
+            state=state_value, nonce=nonce, code_verifier=code_verifier
+        ),
+        state_value,
+        nonce,
+        code_verifier,
+    )
+
+
+@router.get("/google/config", response_model=GoogleOAuthConfigResponse)
+async def google_oauth_config() -> GoogleOAuthConfigResponse:
+    return GoogleOAuthConfigResponse(enabled=get_settings().google_oauth_enabled)
+
+
+@router.get("/google/start", include_in_schema=False)
+async def start_google_login(request: Request) -> RedirectResponse:
+    await enforce_rate_limit(
+        bucket="google_login_ip",
+        identity=request_ip(request),
+        limit=20,
+        window_seconds=900,
+        fail_closed=False,
+    )
+    try:
+        authorization_url, state_value, nonce, code_verifier = _new_google_authorization()
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Logowanie Google nie jest skonfigurowane",
+        )
+    response = RedirectResponse(authorization_url, status_code=status.HTTP_303_SEE_OTHER)
+    _set_google_oauth_cookies(
+        response,
+        state_value=state_value,
+        nonce=nonce,
+        code_verifier=code_verifier,
+        intent="login",
+    )
+    return response
+
+
+@router.post("/google/link", response_model=AuthorizationUrlResponse)
+async def start_google_link(
+    response: Response,
+    current: Annotated[CurrentAuth, Depends(require_csrf)],
+) -> AuthorizationUrlResponse:
+    try:
+        authorization_url, state_value, nonce, code_verifier = _new_google_authorization()
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Logowanie Google nie jest skonfigurowane",
+        )
+    _set_google_oauth_cookies(
+        response,
+        state_value=state_value,
+        nonce=nonce,
+        code_verifier=code_verifier,
+        intent="link",
+    )
+    return AuthorizationUrlResponse(authorization_url=authorization_url)
+
+
+@router.get("/google/identity", response_model=GoogleIdentityStatusResponse)
+async def google_identity_status(
+    current: Annotated[CurrentAuth, Depends(get_current_auth)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> GoogleIdentityStatusResponse:
+    return GoogleIdentityStatusResponse(
+        connected=await has_google_identity(db, user=current.user)
+    )
+
+
+@router.get("/google/callback", include_in_schema=False)
+async def google_callback(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    state_value: Annotated[str | None, Query(alias="state", max_length=256)] = None,
+    code: Annotated[str | None, Query(max_length=4096)] = None,
+    oauth_error: Annotated[str | None, Query(alias="error", max_length=128)] = None,
+) -> RedirectResponse:
+    expected_state = request.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)
+    expected_nonce = request.cookies.get(GOOGLE_OAUTH_NONCE_COOKIE)
+    code_verifier = request.cookies.get(GOOGLE_OAUTH_VERIFIER_COOKIE)
+    intent = request.cookies.get(GOOGLE_OAUTH_INTENT_COOKIE)
+    state_is_valid = bool(
+        state_value
+        and expected_state
+        and secrets.compare_digest(state_value, expected_state)
+    )
+    if (
+        not state_is_valid
+        or not expected_nonce
+        or not code_verifier
+        or intent not in {"login", "link"}
+    ):
+        return _frontend_google_redirect("invalid_state")
+    if oauth_error:
+        return _frontend_google_redirect("cancelled")
+    if not code:
+        return _frontend_google_redirect("provider_error")
+
+    try:
+        claims = await exchange_code_for_claims(
+            code=code,
+            expected_nonce=expected_nonce,
+            code_verifier=code_verifier,
+        )
+        if intent == "link":
+            settings = get_settings()
+            session_token = request.cookies.get(settings.auth_cookie_name)
+            active_session = (
+                await find_active_session(db, session_token) if session_token else None
+            )
+            if active_session is None:
+                return _frontend_google_redirect("link_requires_login")
+            await link_google_identity(db, user=active_session.user, claims=claims)
+            return _frontend_google_redirect("linked")
+
+        user = await login_or_register_google_user(db, claims=claims)
+        created = await create_session(
+            db, user=user, user_agent=request.headers.get("user-agent")
+        )
+    except GoogleAccountLinkRequiredError:
+        return _frontend_google_redirect("link_required")
+    except GoogleEmailMismatchError:
+        return _frontend_google_redirect("email_mismatch")
+    except GoogleIdentityConflictError:
+        return _frontend_google_redirect("identity_conflict")
+    except InactiveGoogleUserError:
+        return _frontend_google_redirect("inactive")
+    except GoogleOAuthError:
+        logger.exception("Nie udało się zweryfikować odpowiedzi Google OAuth")
+        return _frontend_google_redirect("provider_error")
+
+    response = _frontend_google_redirect("success")
+    set_auth_cookies(
+        response,
+        session_token=created.session_token,
+        csrf_token=created.csrf_token,
+    )
+    return response
 
 
 @router.post(

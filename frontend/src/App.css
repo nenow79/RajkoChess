@@ -122,6 +122,11 @@
 .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 20px; padding: 4px; border-radius: 9px; background: #edf1f2; }
 .auth-tabs button { padding: 9px; border: 0; border-radius: 6px; background: transparent; color: #69777f; cursor: pointer; font-weight: 700; }
 .auth-tabs button.active { background: #fff; color: #416326; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.auth-google { display: flex; align-items: center; justify-content: center; gap: 10px; box-sizing: border-box; width: 100%; padding: 11px 14px; border: 1px solid #bdc8cc; border-radius: 7px; background: #fff; color: #34495e; cursor: pointer; font-size: 14px; font-weight: 800; text-decoration: none; }
+.auth-google:hover { border-color: #8c9aa1; background: #fafbfb; }
+.auth-google span { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 50%; background: conic-gradient(from -45deg, #4285f4 0 25%, #34a853 0 40%, #fbbc05 0 65%, #ea4335 0 85%, #4285f4 0); color: #fff; font-size: 12px; }
+.auth-divider { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: #8a969d; font-size: 11px; }
+.auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: #e1e6e8; content: ""; }
 .auth-form { display: flex; flex-direction: column; gap: 14px; }
 .auth-form label { display: flex; flex-direction: column; gap: 6px; color: #34495e; font-size: 13px; font-weight: 700; }
 .auth-form label span { color: #8a969d; font-size: 11px; font-weight: 500; }
@@ -139,6 +144,12 @@
 .auth-success { padding: 9px 10px; border-left: 3px solid #587d36; border-radius: 4px; background: #f1f8eb; color: #416326; font-size: 12px; line-height: 1.4; text-align: left; }
 .auth-link { display: inline-block; box-sizing: border-box; text-decoration: none; }
 .auth-secondary { margin-top: 10px; padding: 9px 12px; border: 0; background: transparent; color: #587d36; cursor: pointer; font-weight: 700; }
+.account-google-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding: 13px; border: 1px solid #dce4dd; border-radius: 8px; background: #f8faf8; }
+.account-google-row div { display: flex; min-width: 0; flex-direction: column; gap: 3px; color: #34495e; font-size: 13px; }
+.account-google-row small { color: #78868d; font-size: 10px; font-weight: 500; }
+.account-google-row button { flex: none; padding: 9px 12px; border: 1px solid #9ba8af; border-radius: 6px; background: #fff; color: #52616b; cursor: pointer; font-weight: 700; }
+.account-google-row button:disabled { cursor: default; opacity: .65; }
+.user-menu-notice { color: #416326; font-size: 11px; font-weight: 700; }
 
 /* Administration */
 .admin-overlay { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(25,38,46,.7); }

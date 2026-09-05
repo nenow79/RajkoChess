@@ -63,7 +63,9 @@ Skrypt przerywa pracę przy niezapisanych zmianach, nieudanych testach,
 niedostępnej bazie lub Redisie, błędnej konfiguracji nginx, nieudanym backupie,
 migracji albo healthchecku. Po wdrożeniu należy ręcznie sprawdzić:
 
-1. rejestrację, odbiór wiadomości weryfikacyjnej i logowanie kontem testowym,
+1. rejestrację, odbiór wiadomości weryfikacyjnej i logowanie kontem testowym;
+   jeśli Google OAuth jest włączone, także utworzenie nowego konta Google oraz
+   jawne podłączenie Google do istniejącego konta hasłowego,
 2. import PGN i FEN, pełną analizę, znacznik analizy, odtworzenie rozmowy po
    odświeżeniu oraz ponowne otwarcie partii z historii,
 3. zapis domyślnego loginu Chess.com w ustawieniach konta i jego automatyczne

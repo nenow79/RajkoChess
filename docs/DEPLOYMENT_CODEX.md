@@ -141,13 +141,17 @@ W `backend.env` wymagają świadomego ustawienia co najmniej:
 - wszystkie `POSTGRES_*`; dla lokalnej bazy użyj `POSTGRES_HOST=127.0.0.1`,
 - `RATE_LIMIT_KEY_SECRET` — losowa wartość co najmniej 32-znakowa,
 - `PUBLIC_APP_URL=https://rajko.pl/chess`,
+- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` i dokładny
+  `GOOGLE_OAUTH_REDIRECT_URI=https://rajko.pl/chess/api/auth/google/callback`;
+  ten sam URI musi być wpisany w Google Cloud Console,
 - prawdziwe dane SMTP i adres nadawcy,
 - produkcyjny `OPENROUTER_API_KEY` z twardym limitem wydatków u dostawcy,
 - `OPENROUTER_HTTP_REFERER=https://rajko.pl/chess/`,
 - `AUTH_COOKIE_SECURE=true` oraz nazwy cookie z prefiksem `__Host-`,
 - poprawna ścieżka `STOCKFISH_PATH`.
 
-`LICHESS_API_TOKEN` jest opcjonalny. Nie uruchamiaj bety bez działającej poczty
+`LICHESS_API_TOKEN` jest opcjonalny. Dane Google OAuth można pozostawić puste,
+aby ukryć logowanie Google. Nie uruchamiaj bety bez działającej poczty
 weryfikacyjnej. Po edycji sprawdź wyłącznie metadane pliku:
 
 ```bash

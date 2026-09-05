@@ -17,6 +17,21 @@ const authApi = axios.create({
   withCredentials: true,
 });
 
+export const googleLoginUrl = `${API_URL}/auth/google/start`;
+
+export const getGoogleOAuthConfig = () =>
+  authApi.get<{ enabled: boolean }>("/google/config").then((response) => response.data);
+
+export const getGoogleIdentityStatus = () =>
+  axios.get<{ connected: boolean }>(`${API_URL}/auth/google/identity`, {
+    withCredentials: true,
+  }).then((response) => response.data);
+
+export const startGoogleLink = () =>
+  axios.post<{ authorization_url: string }>(`${API_URL}/auth/google/link`, null, {
+    withCredentials: true,
+  }).then((response) => response.data);
+
 export const getCurrentUser = () =>
   authApi.get<AuthUser>("/me").then((response) => response.data);
 

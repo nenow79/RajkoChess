@@ -60,9 +60,16 @@ class AuthSchemaTests(unittest.TestCase):
         self.assertIn("/api/auth/email-verification/resend", paths)
         self.assertIn("/api/auth/password-reset/request", paths)
         self.assertIn("/api/auth/password-reset/confirm", paths)
+        self.assertIn("/api/auth/google/config", paths)
+        self.assertIn("/api/auth/google/link", paths)
+        self.assertIn("/api/auth/google/identity", paths)
         logout_parameters = paths["/api/auth/logout"]["post"]["parameters"]
         self.assertTrue(
             any(parameter["name"] == "X-CSRF-Token" for parameter in logout_parameters)
+        )
+        google_link_parameters = paths["/api/auth/google/link"]["post"]["parameters"]
+        self.assertTrue(
+            any(parameter["name"] == "X-CSRF-Token" for parameter in google_link_parameters)
         )
 
     def test_game_state_uses_authenticated_cookie_not_client_session_header(self):

@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
-import { deletePlatformAccount, getAuthErrorMessage, savePlatformAccount } from "../auth/api";
+import { deletePlatformAccount, getAuthErrorMessage, getGoogleIdentityStatus, getGoogleOAuthConfig, savePlatformAccount, startGoogleLink } from "../auth/api";
 import { useAuth } from "../auth/useAuth";
 
 interface AccountSettingsProps {
@@ -14,6 +14,33 @@ export default function AccountSettings({ onClose }: AccountSettingsProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getGoogleOAuthConfig(), getGoogleIdentityStatus()])
+      .then(([config, identity]) => {
+        if (!active) return;
+        setGoogleEnabled(config.enabled);
+        setGoogleConnected(identity.connected);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const connectGoogle = async () => {
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const result = await startGoogleLink();
+      window.location.assign(result.authorization_url);
+    } catch (requestError) {
+      setError(getAuthErrorMessage(requestError, "Nie udało się rozpocząć łączenia z Google."));
+      setBusy(false);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -46,6 +73,17 @@ export default function AccountSettings({ onClose }: AccountSettingsProps) {
           </div>
           <button type="button" onClick={onClose} aria-label="Zamknij ustawienia">×</button>
         </header>
+        {googleEnabled && (
+          <div className="account-google-row">
+            <div>
+              <strong>Logowanie Google</strong>
+              <small>{googleConnected ? "Konto Google jest połączone." : "Podłącz konto o tym samym adresie e-mail."}</small>
+            </div>
+            <button type="button" disabled={busy || googleConnected} onClick={connectGoogle}>
+              {googleConnected ? "Połączono" : "Podłącz Google"}
+            </button>
+          </div>
+        )}
         <form className="account-settings-form" onSubmit={handleSubmit}>
           <label>
             Login Chess.com

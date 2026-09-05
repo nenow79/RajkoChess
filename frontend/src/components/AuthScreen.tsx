@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import axios from "axios";
 
-import { getAuthErrorMessage, requestPasswordReset, resendVerificationEmail } from "../auth/api";
+import { getAuthErrorMessage, getGoogleOAuthConfig, googleLoginUrl, requestPasswordReset, resendVerificationEmail } from "../auth/api";
 import { useAuth } from "../auth/useAuth";
 
 type AuthMode = "login" | "register" | "reset";
@@ -13,11 +13,40 @@ export default function AuthScreen() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => {
+    const result = new URLSearchParams(window.location.search).get("google_auth");
+    const messages: Record<string, string> = {
+      success: "",
+      linked: "",
+      invalid_state: "Sesja logowania Google wygasła. Spróbuj ponownie.",
+      cancelled: "Logowanie Google zostało anulowane.",
+      provider_error: "Nie udało się potwierdzić logowania w Google.",
+      link_required: "Konto z tym adresem już istnieje. Zaloguj się hasłem i podłącz Google w ustawieniach konta.",
+      link_requires_login: "Aby podłączyć Google, zaloguj się ponownie.",
+      email_mismatch: "Wybrane konto Google ma inny adres e-mail.",
+      identity_conflict: "To konto Google jest już połączone z innym kontem.",
+      inactive: "Konto jest nieaktywne.",
+    };
+    return result ? messages[result] ?? "Nie udało się zalogować przez Google." : "";
+  });
+  const [googleEnabled, setGoogleEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState("");
   const [resendMessage, setResendMessage] = useState("");
   const [resetMessage, setResetMessage] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getGoogleOAuthConfig()
+      .then(({ enabled }) => { if (active) setGoogleEnabled(enabled); })
+      .catch(() => undefined);
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("google_auth")) {
+      url.searchParams.delete("google_auth");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+    return () => { active = false; };
+  }, []);
 
   const changeMode = (nextMode: AuthMode) => {
     setMode(nextMode);
@@ -133,6 +162,16 @@ export default function AuthScreen() {
             <button type="button" role="tab" aria-selected={mode === "login"} className={mode === "login" ? "active" : ""} onClick={() => changeMode("login")}>Logowanie</button>
             <button type="button" role="tab" aria-selected={mode === "register"} className={mode === "register" ? "active" : ""} onClick={() => changeMode("register")}>Rejestracja</button>
           </div>
+        )}
+
+        {mode !== "reset" && googleEnabled && (
+          <>
+            <a className="auth-google" href={googleLoginUrl}>
+              <span aria-hidden="true">G</span>
+              Kontynuuj z Google
+            </a>
+            <div className="auth-divider"><span>lub</span></div>
+          </>
         )}
 
         <form className="auth-form" onSubmit={submit}>

@@ -93,6 +93,18 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class GoogleOAuthConfigResponse(BaseModel):
+    enabled: bool
+
+
+class GoogleIdentityStatusResponse(BaseModel):
+    connected: bool
+
+
+class AuthorizationUrlResponse(BaseModel):
+    authorization_url: str
+
+
 class PlatformAccountRequest(BaseModel):
     username: str = Field(min_length=1, max_length=80)
 
