@@ -41,12 +41,21 @@ class PlanDefinitionTests(unittest.TestCase):
         self.assertIn("/api/auth/plan", paths)
         self.assertIn("/api/admin/users/{user_id}/plan", paths)
         self.assertIn("/api/admin/users/{user_id}/premium", paths)
+        self.assertIn("/api/billing/manual", paths)
+        self.assertIn("/api/billing/manual/orders", paths)
         for method in ("post", "delete"):
             operation = paths["/api/admin/users/{user_id}/premium"][method]
             parameters = operation.get("parameters", [])
             self.assertTrue(
                 any(item["name"] == "X-CSRF-Token" for item in parameters)
             )
+        create_order = paths["/api/billing/manual/orders"]["post"]
+        self.assertTrue(
+            any(
+                item["name"] == "X-CSRF-Token"
+                for item in create_order.get("parameters", [])
+            )
+        )
 
 
 class EffectivePlanTests(unittest.IsolatedAsyncioTestCase):

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from db.models.entitlement import Entitlement
     from db.models.identity import Identity
     from db.models.plan_grant import PlanGrant
+    from db.models.payment_order import PaymentOrder
     from db.models.usage_event import UsageEvent
 
 
@@ -90,6 +91,12 @@ class User(UuidPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         foreign_keys="PlanGrant.user_id",
+    )
+    payment_orders: Mapped[list[PaymentOrder]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="PaymentOrder.user_id",
     )
     usage_events: Mapped[list[UsageEvent]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True

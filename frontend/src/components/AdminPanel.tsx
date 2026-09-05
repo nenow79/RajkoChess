@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getAuthErrorMessage } from "../auth/api";
+import { cancelAdminPaymentOrder, confirmAdminPaymentOrder, getAdminPaymentOrders, type PaymentOrder } from "../billing/api";
 import {
   getAdminStatistics,
   getBotStrengthSetting,
@@ -33,27 +34,31 @@ const sourceLabels: Record<string, string> = {
 const formatNumber = (value: number) => new Intl.NumberFormat("pl-PL").format(value);
 
 export default function AdminPanel({ onClose }: AdminPanelProps) {
-  const [view, setView] = useState<"statistics" | "users">("statistics");
+  const [view, setView] = useState<"statistics" | "users" | "orders">("statistics");
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [statistics, setStatistics] = useState<AdminStatistics | null>(null);
   const [botStrength, setBotStrength] = useState<BotStrengthSetting | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyUser, setBusyUser] = useState<string | null>(null);
   const [busySetting, setBusySetting] = useState(false);
+  const [busyOrder, setBusyOrder] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
-      const [userItems, stats, strengthSetting] = await Promise.all([
+      const [userItems, stats, strengthSetting, paymentOrders] = await Promise.all([
         getAdminUsers(),
         getAdminStatistics(),
         getBotStrengthSetting(),
+        getAdminPaymentOrders(),
       ]);
       setUsers(userItems);
       setStatistics(stats);
       setBotStrength(strengthSetting);
+      setOrders(paymentOrders);
     } catch (requestError) {
       setError(getAuthErrorMessage(requestError, "Nie udało się pobrać danych panelu."));
     } finally {
@@ -63,12 +68,13 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([getAdminUsers(), getAdminStatistics(), getBotStrengthSetting()])
-      .then(([userItems, stats, strengthSetting]) => {
+    Promise.all([getAdminUsers(), getAdminStatistics(), getBotStrengthSetting(), getAdminPaymentOrders()])
+      .then(([userItems, stats, strengthSetting, paymentOrders]) => {
         if (!active) return;
         setUsers(userItems);
         setStatistics(stats);
         setBotStrength(strengthSetting);
+        setOrders(paymentOrders);
       })
       .catch((requestError) => {
         if (active) {
@@ -123,6 +129,36 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     ...(statistics?.daily.flatMap((day) => [day.registrations, day.games, day.ai_operations]) ?? []),
   );
 
+  const confirmOrder = async (order: PaymentOrder) => {
+    const reason = window.prompt(`Potwierdź wpływ ${order.reference_code}. Notatka:`, "Wpłata widoczna na rachunku");
+    if (!reason || reason.trim().length < 3) return;
+    setBusyOrder(order.id);
+    setError("");
+    try {
+      await confirmAdminPaymentOrder(order.id, reason.trim());
+      await load();
+    } catch (requestError) {
+      setError(getAuthErrorMessage(requestError, "Nie udało się potwierdzić zamówienia."));
+    } finally {
+      setBusyOrder(null);
+    }
+  };
+
+  const cancelOrder = async (order: PaymentOrder) => {
+    const reason = window.prompt(`Powód anulowania ${order.reference_code}:`, "Nie odnaleziono wpłaty");
+    if (!reason || reason.trim().length < 3) return;
+    setBusyOrder(order.id);
+    setError("");
+    try {
+      await cancelAdminPaymentOrder(order.id, reason.trim());
+      await load();
+    } catch (requestError) {
+      setError(getAuthErrorMessage(requestError, "Nie udało się anulować zamówienia."));
+    } finally {
+      setBusyOrder(null);
+    }
+  };
+
   const saveBotStrength = async () => {
     if (!botStrength) return;
     const value = botStrength.bot_global_elo_offset;
@@ -153,6 +189,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         <nav className="admin-tabs" aria-label="Sekcje panelu">
           <button className={view === "statistics" ? "active" : ""} type="button" onClick={() => setView("statistics")}>Statystyki</button>
           <button className={view === "users" ? "active" : ""} type="button" onClick={() => setView("users")}>Użytkownicy</button>
+          <button className={view === "orders" ? "active" : ""} type="button" onClick={() => setView("orders")}>Zamówienia{orders.some(order => order.status === "pending") ? ` (${orders.filter(order => order.status === "pending").length})` : ""}</button>
           <button className="admin-refresh" type="button" disabled={loading} onClick={() => void load()}>Odśwież</button>
         </nav>
         {error && <p className="auth-error" role="alert">{error}</p>}
@@ -219,6 +256,23 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               ))}
             </div>
           </>
+        ) : view === "orders" ? (
+          <section className="admin-orders">
+            <p className="admin-note">Potwierdzaj zamówienie wyłącznie po zaksięgowaniu przelewu na rachunku. Potwierdzenie automatycznie przedłuża Premium.</p>
+            <div className="payment-table-wrap"><table><thead><tr><th>Kod</th><th>Użytkownik</th><th>Utworzono</th><th>Kwota</th><th>Status</th><th>Akcje</th></tr></thead><tbody>
+              {orders.map((order) => (
+                <tr key={order.id}>
+                  <td><code>{order.reference_code}</code></td>
+                  <td>{order.user_email}</td>
+                  <td>{new Date(order.created_at).toLocaleString("pl-PL")}</td>
+                  <td>{new Intl.NumberFormat("pl-PL", { style: "currency", currency: order.currency }).format(order.amount_minor / 100)}</td>
+                  <td><span className={`payment-status ${order.status}`}>{order.status === "pending" ? "Oczekuje" : order.status === "paid" ? "Opłacone" : "Anulowane"}</span></td>
+                  <td>{order.status === "pending" && <div className="admin-order-actions"><button type="button" disabled={busyOrder === order.id} onClick={() => void confirmOrder(order)}>Potwierdź</button><button className="danger-action" type="button" disabled={busyOrder === order.id} onClick={() => void cancelOrder(order)}>Anuluj</button></div>}</td>
+                </tr>
+              ))}
+              {!orders.length && <tr><td colSpan={6} className="admin-empty">Brak zamówień.</td></tr>}
+            </tbody></table></div>
+          </section>
         ) : null}
       </section>
     </div>

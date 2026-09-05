@@ -16,6 +16,7 @@ from db.models.enums import (
 )
 from db.models.game import Game
 from db.models.identity import Identity
+from db.models.payment_order import PaymentOrder
 from db.models.plan_grant import PlanGrant
 from db.models.runtime_setting import RuntimeSetting
 from db.models.usage_event import UsageEvent
@@ -36,6 +37,7 @@ __all__ = [
     "Game",
     "GameSource",
     "Identity",
+    "PaymentOrder",
     "PlanGrant",
     "RuntimeSetting",
     "SystemRole",

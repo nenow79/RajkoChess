@@ -1,11 +1,12 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from auth.audit import write_audit
 from auth.dependencies import CurrentAuth, require_admin, require_admin_write
 from auth.plans import effective_plan, plan_summary
 from auth.policies import ENTITLEMENT_DEFINITIONS, all_effective_entitlements
+from billing.router import payment_order_response
 from chess_logic.bot_catalog import bot_response
 from chess_logic.runtime_settings import (
     BOT_GLOBAL_ELO_OFFSET_KEY,
@@ -16,6 +17,7 @@ from db.models import (
     AuthSession,
     Bot,
     Entitlement,
+    PaymentOrder,
     PlanGrant,
     RuntimeSetting,
     User,
@@ -38,6 +40,131 @@ from admin.schemas import (
 from admin.statistics import beta_statistics
 
 router = APIRouter(prefix="/api/admin", tags=["Administration"])
+
+
+@router.get("/payment-orders")
+async def list_payment_orders(
+    current: Annotated[CurrentAuth, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    rows = (
+        await db.execute(
+            select(PaymentOrder, User)
+            .join(User, User.id == PaymentOrder.user_id)
+            .order_by(PaymentOrder.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    return [
+        payment_order_response(order, email=user.email, include_admin=True)
+        for order, user in rows
+    ]
+
+
+@router.post("/payment-orders/{order_id}/confirm")
+async def confirm_payment_order(
+    order_id: uuid.UUID,
+    payload: AdminReason,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    order = await db.scalar(
+        select(PaymentOrder)
+        .where(PaymentOrder.id == order_id)
+        .with_for_update()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono zamówienia")
+    if order.status != "pending":
+        raise HTTPException(
+            status_code=409, detail="Zamówienie zostało już rozpatrzone"
+        )
+    target = await db.get(User, order.user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono użytkownika")
+
+    now = datetime.now(timezone.utc)
+    active = await effective_plan(db, user=target, now=now)
+    base = active.expires_at if active.expires_at and active.expires_at > now else now
+    grant = PlanGrant(
+        user_id=target.id,
+        plan_key="premium",
+        starts_at=now,
+        ends_at=base + timedelta(days=order.premium_days),
+        source="bank_transfer",
+        granted_by_user_id=current.user.id,
+        reason=f"Opłacone zamówienie {order.reference_code}",
+    )
+    db.add(grant)
+    await db.flush()
+    order.status = "paid"
+    order.paid_at = now
+    order.confirmed_by_user_id = current.user.id
+    order.plan_grant_id = grant.id
+    order.admin_note = payload.reason
+    await write_audit(
+        db,
+        current=current,
+        action="payment_order.confirmed",
+        resource_type="payment_order",
+        resource_id=str(order.id),
+        reason=payload.reason,
+        details={
+            "user_id": str(target.id),
+            "reference_code": order.reference_code,
+            "amount_minor": order.amount_minor,
+            "currency": order.currency,
+            "premium_days": order.premium_days,
+            "plan_grant_id": str(grant.id),
+            "premium_ends_at": grant.ends_at.isoformat(),
+        },
+    )
+    await db.commit()
+    await db.refresh(order)
+    return payment_order_response(order, email=target.email, include_admin=True)
+
+
+@router.post("/payment-orders/{order_id}/cancel")
+async def cancel_payment_order(
+    order_id: uuid.UUID,
+    payload: AdminReason,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    order = await db.scalar(
+        select(PaymentOrder)
+        .where(PaymentOrder.id == order_id)
+        .with_for_update()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono zamówienia")
+    if order.status != "pending":
+        raise HTTPException(
+            status_code=409, detail="Zamówienie zostało już rozpatrzone"
+        )
+    target = await db.get(User, order.user_id)
+    order.status = "cancelled"
+    order.cancelled_at = datetime.now(timezone.utc)
+    order.confirmed_by_user_id = current.user.id
+    order.admin_note = payload.reason
+    await write_audit(
+        db,
+        current=current,
+        action="payment_order.cancelled",
+        resource_type="payment_order",
+        resource_id=str(order.id),
+        reason=payload.reason,
+        details={
+            "user_id": str(order.user_id),
+            "reference_code": order.reference_code,
+        },
+    )
+    await db.commit()
+    await db.refresh(order)
+    return payment_order_response(
+        order, email=target.email if target else "", include_admin=True
+    )
 
 
 @router.get("/statistics")

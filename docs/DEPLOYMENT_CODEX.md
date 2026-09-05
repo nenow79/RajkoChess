@@ -150,6 +150,10 @@ W `backend.env` wymagają świadomego ustawienia co najmniej:
 - `AUTH_COOKIE_SECURE=true` oraz nazwy cookie z prefiksem `__Host-`,
 - poprawna ścieżka `STOCKFISH_PATH`.
 
+Ręczne zamówienia Premium pozostają wyłączone, dopóki nie zostaną świadomie
+ustawione `MANUAL_PAYMENT_RECIPIENT` i `MANUAL_PAYMENT_IBAN`. Cena w groszach i
+czas dostępu mają domyślne wartości odpowiednio `1000` i `30`.
+
 `LICHESS_API_TOKEN` jest opcjonalny. Dane Google OAuth można pozostawić puste,
 aby ukryć logowanie Google. Nie uruchamiaj bety bez działającej poczty
 weryfikacyjnej. Po edycji sprawdź wyłącznie metadane pliku:

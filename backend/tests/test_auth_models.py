@@ -17,6 +17,7 @@ from db.models import (
     Game,
     GameSource,
     Identity,
+    PaymentOrder,
     PlanGrant,
     SystemRole,
     User,
@@ -45,6 +46,7 @@ class AuthModelMetadataTests(unittest.TestCase):
                 "chat_messages",
                 "chess_platform_accounts",
                 "runtime_settings",
+                "payment_orders",
             },
         )
 
@@ -168,6 +170,24 @@ class AuthModelMetadataTests(unittest.TestCase):
         }
         self.assertIn("ck_plan_grants_ends_after_start", plan_checks)
         self.assertIn("ck_usage_events_quantity_positive", usage_checks)
+
+    def test_payment_orders_allow_only_one_pending_order_per_user(self):
+        table = cast(Table, PaymentOrder.__table__)
+        checks = {
+            constraint.name
+            for constraint in table.constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        pending_index = next(
+            index
+            for index in table.indexes
+            if index.name == "uq_payment_orders_one_pending_per_user"
+        )
+
+        self.assertIn("ck_payment_orders_amount_positive", checks)
+        self.assertIn("ck_payment_orders_premium_days_range", checks)
+        self.assertIn("ck_payment_orders_status_allowed", checks)
+        self.assertTrue(pending_index.unique)
 
 
 if __name__ == "__main__":

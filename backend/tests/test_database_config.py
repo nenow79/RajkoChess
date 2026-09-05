@@ -41,6 +41,27 @@ class DatabaseSettingsTests(unittest.TestCase):
         ):
             _ = settings.database_url
 
+    def test_manual_payment_configuration_normalizes_polish_iban(self):
+        settings = Settings.model_validate(
+            {
+                "MANUAL_PAYMENT_RECIPIENT": "  Jan   Kowalski ",
+                "MANUAL_PAYMENT_IBAN": "PL61 1090 1014 0000 0712 1981 2874",
+            }
+        )
+
+        self.assertTrue(settings.manual_payments_enabled)
+        self.assertEqual(settings.manual_payment_recipient, "Jan Kowalski")
+        self.assertEqual(settings.manual_payment_iban, "PL61109010140000071219812874")
+
+    def test_manual_payment_configuration_rejects_invalid_iban_checksum(self):
+        with self.assertRaisesRegex(ValueError, "sumę kontrolną"):
+            Settings.model_validate(
+                {
+                    "MANUAL_PAYMENT_RECIPIENT": "Jan Kowalski",
+                    "MANUAL_PAYMENT_IBAN": "PL00109010140000071219812874",
+                }
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

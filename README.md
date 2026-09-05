@@ -321,6 +321,29 @@ Jeśli użytkownik wpisze w zwykłym czacie prośbę o analizę całej partii, b
 bez zużywania limitu i bez uruchamiania silnika lub LLM kieruje go do przycisku
 `Analizuj całą partię`.
 
+### Ręczne zamówienia Premium przelewem
+
+Zalogowany użytkownik może z menu planu utworzyć jedno oczekujące zamówienie na
+czasowy dostęp Premium. Aplikacja pokazuje zapisany w zamówieniu rachunek,
+odbiorcę, kwotę i unikalny tytuł `RC-...`. Historia zamówień jest widoczna dla
+użytkownika, a administrator ma osobną tabelę „Zamówienia”. Potwierdzenie
+zaksięgowanej wpłaty tworzy audytowany grant i przedłuża Premium od późniejszej
+z dat: teraz albo koniec aktywnego okresu. Ponowne potwierdzenie tego samego
+zamówienia jest blokowane transakcyjnie.
+
+Funkcja pozostaje wyłączona, dopóki backend nie ma obu wartości:
+
+```dotenv
+MANUAL_PAYMENT_RECIPIENT=Imię i nazwisko odbiorcy
+MANUAL_PAYMENT_IBAN=PLxxxxxxxxxxxxxxxxxxxxxxxxxx
+MANUAL_PREMIUM_AMOUNT_GROSZE=1000
+MANUAL_PREMIUM_DAYS=30
+```
+
+Po zmianie konfiguracji nowe zamówienia dostają nowe instrukcje, natomiast już
+utworzone zachowują migawkę rachunku i ceny. Administrator powinien potwierdzać
+zamówienie wyłącznie na podstawie zaksięgowanej wpłaty, nie zrzutu ekranu.
+
 ### Redis i rate limiting
 
 Redis przechowuje wyłącznie krótkotrwałe liczniki i blokady współbieżności. Nie

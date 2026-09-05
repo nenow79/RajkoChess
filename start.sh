@@ -62,6 +62,12 @@ if [[ "$SKIP_INSTALL" != "1" ]]; then
   fi
 fi
 
+echo "Aktualizuję schemat PostgreSQL..."
+(
+  cd "$BACKEND_DIR"
+  "$VENV_DIR/bin/alembic" upgrade head
+)
+
 echo "Uruchamiam backend: http://$BACKEND_HOST:$BACKEND_PORT"
 (
   cd "$BACKEND_DIR"

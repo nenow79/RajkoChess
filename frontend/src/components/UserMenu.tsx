@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAuthErrorMessage } from "../auth/api";
 import { useAuth } from "../auth/useAuth";
 import { getMyPlan, type PlanSummary } from "../admin/api";
 import AdminPanel from "./AdminPanel";
 import AccountSettings from "./AccountSettings";
+import PaymentDialog from "./PaymentDialog";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
+  const menuRef = useRef<HTMLDivElement>(null);
   const initialGoogleResult = new URLSearchParams(window.location.search).get("google_auth");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(() => ({
@@ -20,6 +22,8 @@ export default function UserMenu() {
   const [planOpen, setPlanOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
   const loadPlan = useCallback(
     () => getMyPlan().then(setPlan).catch(() => setPlan(null)),
@@ -36,6 +40,28 @@ export default function UserMenu() {
     }
   }, [loadPlan]);
 
+  useEffect(() => {
+    if (!accountMenuOpen && !planOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+        setPlanOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+        setPlanOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountMenuOpen, planOpen]);
+
   if (!user) return null;
 
   const handleLogout = async () => {
@@ -50,26 +76,45 @@ export default function UserMenu() {
   };
 
   return (
-    <div className="user-menu">
-      <div className="user-identity">
+    <div className="user-menu" ref={menuRef}>
+      <button
+        type="button"
+        className="user-account-trigger"
+        aria-haspopup="menu"
+        aria-expanded={accountMenuOpen}
+        onClick={() => {
+          setPlanOpen(false);
+          setAccountMenuOpen((open) => !open);
+        }}
+      >
         <span className="user-avatar" aria-hidden="true">{(user.display_name || user.email).charAt(0).toUpperCase()}</span>
-        <span><strong>{user.display_name || user.email}</strong>{user.display_name && <small>{user.email}</small>}</span>
-      </div>
+        <span className="user-identity"><strong>{user.display_name || user.email}</strong>{user.display_name && <small>{user.email}</small>}</span>
+        <span className="user-menu-chevron" aria-hidden="true">⌄</span>
+      </button>
       <button
         type="button"
         className={`user-plan-pill ${plan?.base_plan || "free"}`}
         title={plan?.expires_at ? `Premium do ${new Date(plan.expires_at).toLocaleDateString("pl-PL")}` : "Pokaż wykorzystanie planu"}
         onClick={() => {
           const nextOpen = !planOpen;
+          setAccountMenuOpen(false);
           setPlanOpen(nextOpen);
           if (nextOpen) void loadPlan();
         }}
       >
         {(plan?.key || "free").toUpperCase()}
       </button>
-      {user.system_role === "admin" && <button type="button" onClick={() => setAdminOpen(true)}>Administracja</button>}
-      <button type="button" onClick={() => setSettingsOpen(true)}>Ustawienia</button>
-      <button type="button" onClick={handleLogout} disabled={busy}>{busy ? "Wylogowywanie…" : "Wyloguj"}</button>
+      {plan?.key === "free" && <button className="premium-upgrade-cta" type="button" title="Premium na 30 dni — płatność jednorazowa" onClick={() => { setAccountMenuOpen(false); setPlanOpen(false); setPaymentsOpen(true); }}><span aria-hidden="true">♛</span> Kup Premium · 10 zł</button>}
+      {accountMenuOpen && (
+        <div className="user-account-popover" role="menu">
+          <div className="user-account-popover-heading"><strong>{user.display_name || "Twoje konto"}</strong><small>{user.email}</small></div>
+          <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setPlanOpen(true); void loadPlan(); }}><span aria-hidden="true">◔</span> Wykorzystanie planu</button>
+          <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setSettingsOpen(true); }}><span aria-hidden="true">⚙</span> Ustawienia konta</button>
+          {user.system_role === "admin" && <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setAdminOpen(true); }}><span aria-hidden="true">▦</span> Administracja</button>}
+          <div className="user-account-menu-separator" />
+          <button className="logout-action" type="button" role="menuitem" onClick={handleLogout} disabled={busy}><span aria-hidden="true">↪</span> {busy ? "Wylogowywanie…" : "Wyloguj"}</button>
+        </div>
+      )}
       {error && <span className="user-menu-error" role="alert">{error}</span>}
       {notice && <span className="user-menu-notice" role="status">{notice}</span>}
       {planOpen && plan && (
@@ -82,10 +127,12 @@ export default function UserMenu() {
             </div>
           ))}
           {plan.expires_at && <small>Premium do {new Date(plan.expires_at).toLocaleDateString("pl-PL")}</small>}
+          {plan.key !== "admin" && <button className="plan-buy-button" type="button" onClick={() => { setPlanOpen(false); setPaymentsOpen(true); }}>Kup Premium</button>}
         </div>
       )}
       {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
       {settingsOpen && <AccountSettings onClose={() => setSettingsOpen(false)} />}
+      {paymentsOpen && <PaymentDialog onClose={() => { setPaymentsOpen(false); void loadPlan(); }} />}
     </div>
   );
 }

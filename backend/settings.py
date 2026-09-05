@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -72,6 +72,21 @@ class Settings(BaseSettings):
     password_reset_minutes: int = Field(
         default=60, gt=0, le=1440, validation_alias="PASSWORD_RESET_MINUTES"
     )
+    manual_payment_recipient: str = Field(
+        default="", max_length=160, validation_alias="MANUAL_PAYMENT_RECIPIENT"
+    )
+    manual_payment_iban: str = Field(
+        default="", max_length=34, validation_alias="MANUAL_PAYMENT_IBAN"
+    )
+    manual_premium_amount_grosze: int = Field(
+        default=1000,
+        ge=100,
+        le=1_000_000,
+        validation_alias="MANUAL_PREMIUM_AMOUNT_GROSZE",
+    )
+    manual_premium_days: int = Field(
+        default=30, ge=1, le=366, validation_alias="MANUAL_PREMIUM_DAYS"
+    )
     redis_url: str = Field(
         default="redis://127.0.0.1:6379/0", validation_alias="REDIS_URL"
     )
@@ -125,6 +140,25 @@ class Settings(BaseSettings):
         validation_alias="OPENROUTER_TRANSLATION_MAX_TOKENS",
     )
 
+    @field_validator("manual_payment_recipient")
+    @classmethod
+    def normalize_manual_payment_recipient(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @field_validator("manual_payment_iban")
+    @classmethod
+    def normalize_manual_payment_iban(cls, value: str) -> str:
+        normalized = "".join(value.split()).upper()
+        if normalized and (not normalized.startswith("PL") or len(normalized) != 28):
+            raise ValueError("MANUAL_PAYMENT_IBAN musi być polskim IBAN-em: PL i 26 cyfr")
+        if normalized and not normalized[2:].isdigit():
+            raise ValueError("MANUAL_PAYMENT_IBAN może zawierać tylko PL i cyfry")
+        if normalized:
+            checksum_value = int(normalized[4:] + "2521" + normalized[2:4])
+            if checksum_value % 97 != 1:
+                raise ValueError("MANUAL_PAYMENT_IBAN ma nieprawidłową sumę kontrolną")
+        return normalized
+
     @model_validator(mode="after")
     def validate_auth_cookie_settings(self) -> "Settings":
         if self.auth_session_absolute_days < self.auth_session_idle_days:
@@ -158,6 +192,10 @@ class Settings(BaseSettings):
             and self.google_oauth_client_secret.get_secret_value()
             and self.google_oauth_redirect_uri
         )
+
+    @property
+    def manual_payments_enabled(self) -> bool:
+        return bool(self.manual_payment_recipient and self.manual_payment_iban)
 
     def require_google_oauth(self) -> None:
         missing = [
