@@ -7,8 +7,8 @@ po uruchomieniu aplikacji znajdują się w [BETA_OPERATIONS.md](BETA_OPERATIONS.
 ## Zasady i oczekiwany rezultat
 
 Docelowa aplikacja działa pod `https://rajko.pl/chess/`, API nasłuchuje wyłącznie
-na `127.0.0.1:8000`, a PostgreSQL i Redis nie są publicznie dostępne. Cała beta,
-poza bezstanowym endpointem `/chess/api/health`, jest osłonięta nginx Basic Auth.
+na `127.0.0.1:8000`, a PostgreSQL i Redis nie są publicznie dostępne. Dodatkowe hasło nginx Basic Auth jest obecnie wyłączone; dyrektywy pozostają
+zakomentowane w konfiguracjach nginx. Logowanie aplikacji działa niezależnie.
 
 Codex powinien wykonywać odczytowe rozpoznanie samodzielnie, ale musi zatrzymać
 się i poprosić właściciela o brakujące dane lub zgodę przed:
@@ -166,13 +166,21 @@ Oczekiwany wynik zaczyna się od `root root 600`.
 
 ## 5. nginx Basic Auth i TLS
 
-Najpierw utwórz dane wejściowe zamkniętej bety. Polecenie zapyta o hasło — nie
-podawaj go w linii poleceń:
+Basic Auth jest opcjonalne i obecnie wyłączone. Aby przywrócić hasło, odkomentuj
+`auth_basic` i `auth_basic_user_file` we wszystkich trzech lokalizacjach `/chess`
+w używanej konfiguracji, wykonaj `sudo nginx -t` i `sudo systemctl reload nginx`.
+Zachowaj istniejący plik `/etc/nginx/rajko-chess.htpasswd`. Tylko jeśli go nie ma,
+utwórz go poniższymi poleceniami (hasło podaj interaktywnie):
 
 ```bash
 sudo htpasswd -c /etc/nginx/rajko-chess.htpasswd beta
 sudo chmod 0640 /etc/nginx/rajko-chess.htpasswd
 sudo chown root:www-data /etc/nginx/rajko-chess.htpasswd
+```
+
+Przygotuj katalogi niezależnie od używania Basic Auth:
+
+```bash
 sudo install -d -m 0755 /var/www/letsencrypt /var/www/rajko-chess/chess
 ```
 

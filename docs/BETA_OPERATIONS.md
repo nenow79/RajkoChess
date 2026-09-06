@@ -12,8 +12,8 @@ warunki dopuszczenia testerów oraz późniejszą obsługę działającej bety.
 - repozytorium na serwerze jest czyste, a wdrażany commit przeszedł CI,
 - PostgreSQL, Redis, Stockfish, SMTP i opcjonalnie OpenRouter mają produkcyjną
   konfigurację; plik `/etc/rajko-chess/backend.env` ma tryb `0600`,
-- rejestracja jest dostępna wyłącznie osobom zaproszonym przez dodatkową ochronę
-  nginx Basic Auth; link i hasło nie są publikowane,
+- dodatkowe hasło nginx Basic Auth jest obecnie wyłączone; wejście na stronę
+  i formularz rejestracji jest publiczne (przywrócenie ochrony opisuje runbook),
 - administrator uzupełnił wszystkie pola `[UZUPEŁNIJ]` w dokumentach dla
   testerów i udostępnił je przed utworzeniem konta,
 - wskazana osoba odbiera zgłoszenia testerów oraz alarmy infrastruktury,
