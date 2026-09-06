@@ -91,6 +91,12 @@
 .user-menu > .premium-upgrade-cta { display: flex; align-items: center; gap: 4px; padding: 6px 9px; border: 1px solid #d8bd69; background: #fff8df; color: #765d0b; font-size: 10px; }
 .user-menu > .premium-upgrade-cta:hover { border-color: #b69636; background: #fff2c5; }
 .user-menu > .premium-upgrade-cta span { font-size: 12px; line-height: 1; }
+.user-menu > .support-icon-button { position: relative; display: grid; width: 34px; height: 30px; place-items: center; padding: 0; border-color: transparent; background: transparent; color: #62727a; }
+.user-menu > .support-icon-button:hover { border-color: #cad5d9; background: #f3f7f8; color: #416326; }
+.support-icon-button svg { width: 19px; height: 19px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.notification-badge { display: inline-grid; min-width: 17px; height: 17px; box-sizing: border-box; place-items: center; padding: 0 4px; border-radius: 9px; background: #c0392b; color: #fff; font-size: 9px; font-style: normal; font-weight: 900; line-height: 1; }
+.support-icon-button > .notification-badge { position: absolute; top: -7px; right: -7px; box-shadow: 0 0 0 2px #fff; }
+.user-account-popover .menu-badge { width: auto; margin-left: auto; color: #fff; }
 .user-account-popover { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: 220px; padding: 7px; border: 1px solid #d8dfd2; border-radius: 9px; background: #fff; box-shadow: 0 7px 24px rgba(34,48,42,.18); }
 .user-account-popover-heading { display: flex; min-width: 0; flex-direction: column; gap: 2px; padding: 7px 9px 10px; border-bottom: 1px solid #edf0eb; }
 .user-account-popover-heading strong, .user-account-popover-heading small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -222,6 +228,7 @@
 .admin-note { color: #68777f; font-size: 13px; }
 .admin-tabs { display: flex; gap: 5px; margin: 18px 0; padding: 4px; border-radius: 9px; background: #e8eeea; }
 .admin-tabs button { padding: 8px 14px; border: 0; border-radius: 6px; background: transparent; color: #607078; cursor: pointer; font-weight: 800; }
+.admin-tabs button .notification-badge { margin-left: 6px; vertical-align: middle; }
 .admin-tabs button.active { background: #fff; color: #416326; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 .admin-tabs .admin-refresh { margin-left: auto; font-weight: 700; }
 .admin-tabs button:disabled { cursor: wait; opacity: .55; }
@@ -1958,7 +1965,87 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .game-source-icon {
+.game-source-icon {
     display: none;
   }
+}
+
+/* Zgłoszenia i pomysły */
+.support-overlay { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(25,38,46,.72); }
+.support-dialog { display: flex; width: min(940px, 100%); height: min(720px, 90dvh); flex-direction: column; overflow: hidden; border-radius: 14px; background: #f8faf8; box-shadow: 0 18px 60px rgba(0,0,0,.3); }
+.support-dialog > header { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 24px 17px; border-bottom: 1px solid #dce4dd; background: #fff; }
+.support-dialog > header h2 { margin: 0; color: #263844; }
+.support-dialog > header > button { border: 0; background: transparent; color: #52616b; cursor: pointer; font-size: 30px; line-height: 1; }
+.support-layout { display: grid; min-height: 0; flex: 1; grid-template-columns: 280px minmax(0, 1fr); }
+.support-ticket-list { display: flex; min-height: 0; flex-direction: column; gap: 6px; padding: 14px; overflow-y: auto; border-right: 1px solid #dce4dd; background: #f1f5f1; }
+.support-ticket-list > button, .admin-support-list > button { display: flex; width: 100%; flex-direction: column; gap: 5px; padding: 10px 11px; border: 1px solid #d9e1da; border-radius: 7px; background: #fff; color: #52616b; cursor: pointer; text-align: left; }
+.support-ticket-list > button.active, .admin-support-list > button.active { border-color: #7fa650; background: #edf4e6; }
+.support-ticket-list > button > span, .admin-support-list > button > span { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 7px; }
+.support-ticket-list strong, .admin-support-list strong { overflow: hidden; color: #34495e; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.support-ticket-list small, .admin-support-list small { color: #7a878d; font-size: 9px; }
+.support-ticket-list > .support-new-button { display: block; padding: 10px; border-color: #587d36; background: #587d36; color: #fff; font-weight: 800; text-align: center; }
+.support-ticket-list > p { padding: 16px 6px; color: #7a878d; font-size: 11px; line-height: 1.45; text-align: center; }
+.support-content { min-width: 0; min-height: 0; padding: 18px; overflow-y: auto; background: #fff; }
+.support-form { display: flex; max-width: 620px; flex-direction: column; gap: 13px; margin: 0 auto; }
+.support-form h3 { margin: 0 0 4px; color: #34495e; }
+.support-form label, .support-reply-form label { display: flex; flex-direction: column; gap: 5px; color: #43535c; font-size: 12px; font-weight: 800; }
+.support-form input, .support-form select, .support-form textarea, .support-reply-form textarea, .admin-support-toolbar select, .support-thread-heading select { box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid #b9c5bb; border-radius: 6px; background: #fff; color: #34495e; font: inherit; }
+.support-form textarea, .support-reply-form textarea { resize: vertical; line-height: 1.45; }
+.support-form input:focus, .support-form select:focus, .support-form textarea:focus, .support-reply-form textarea:focus { border-color: #7fa650; outline: 3px solid rgba(127,166,80,.16); }
+.support-form > small { margin-top: -9px; color: #879299; font-size: 9px; text-align: right; }
+.support-form > button, .support-reply-form button { align-self: flex-end; padding: 9px 14px; border: 0; border-radius: 6px; background: #587d36; color: #fff; cursor: pointer; font-weight: 800; }
+.support-form button:disabled, .support-reply-form button:disabled { cursor: wait; opacity: .55; }
+.support-thread-view, .admin-support-thread { display: flex; min-height: 0; height: 100%; flex-direction: column; }
+.support-thread-heading { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid #e3e8e3; }
+.support-thread-heading > div { min-width: 0; }
+.support-thread-heading h3 { margin: 5px 0 0; color: #34495e; overflow-wrap: anywhere; }
+.support-thread-heading small { display: block; margin-top: 4px; color: #7a878d; }
+.support-category, .support-status { display: inline-block; padding: 3px 7px; border-radius: 9px; font-size: 9px; font-weight: 900; text-transform: uppercase; }
+.support-category.problem { background: #fff0ee; color: #a93226; }
+.support-category.idea { background: #f2eafa; color: #7d3c98; }
+.support-category.question { background: #e8f4f8; color: #2471a3; }
+.support-status { flex: 0 0 auto; background: #edf1f2; color: #607078; }
+.support-status.waiting_user { background: #fff4d6; color: #80650d; }
+.support-status.closed { background: #e7ecee; color: #69777d; }
+.support-messages { display: flex; min-height: 180px; flex: 1; flex-direction: column; gap: 10px; padding: 15px 4px; overflow-y: auto; }
+.support-messages article { width: fit-content; max-width: 82%; padding: 10px 12px; border-radius: 9px; color: #34495e; overflow-wrap: anywhere; }
+.support-messages article.user { align-self: flex-end; border-right: 3px solid #3498db; background: #eaf5fc; text-align: right; }
+.support-messages article.admin { align-self: flex-start; border-left: 3px solid #7fa650; background: #eef5e8; }
+.support-messages article strong { display: block; margin-bottom: 5px; font-size: 10px; }
+.support-messages article p { margin: 0; white-space: pre-wrap; font-size: 12px; line-height: 1.5; }
+.support-messages article time { display: block; margin-top: 6px; color: #7f8c8d; font-size: 8px; }
+.support-reply-form { flex: 0 0 auto; padding-top: 12px; border-top: 1px solid #e3e8e3; }
+.support-reply-form > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; }
+.support-reply-form small { color: #879299; font-size: 9px; }
+.support-placeholder { display: grid; height: 100%; place-content: center; justify-items: center; color: #7a878d; text-align: center; }
+.support-placeholder > span { font-size: 36px; }
+.support-placeholder h3 { margin: 10px 0 4px; color: #52616b; }
+.support-placeholder p { max-width: 370px; margin: 0; font-size: 12px; line-height: 1.5; }
+.admin-support-view { display: flex; flex-direction: column; gap: 10px; }
+.admin-support-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.admin-support-toolbar p { margin: 0; }
+.admin-support-toolbar label { display: flex; flex: 0 0 190px; align-items: center; gap: 8px; color: #52616b; font-size: 11px; font-weight: 800; }
+.admin-support-layout { display: grid; min-height: 570px; grid-template-columns: 300px minmax(0, 1fr); overflow: hidden; border: 1px solid #dce4dd; border-radius: 9px; background: #fff; }
+.admin-support-list { display: flex; min-height: 0; flex-direction: column; gap: 6px; padding: 12px; overflow-y: auto; border-right: 1px solid #dce4dd; background: #f1f5f1; }
+.admin-support-list > button > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-support-thread { padding: 15px; overflow: hidden; }
+.support-thread-heading select { width: auto; min-width: 190px; font-size: 11px; }
+
+@media (max-width: 850px) {
+  .support-overlay { align-items: end; padding: 0; }
+  .support-dialog { width: 100%; height: 94dvh; border-radius: 14px 14px 0 0; }
+  .support-layout { grid-template-columns: 220px minmax(0, 1fr); }
+  .admin-support-layout { grid-template-columns: 240px minmax(0, 1fr); }
+  .admin-tabs { overflow-x: auto; }
+}
+
+@media (max-width: 480px) {
+  .support-dialog > header { padding: 16px; }
+  .support-layout, .admin-support-layout { grid-template-columns: 1fr; }
+  .support-ticket-list, .admin-support-list { max-height: 190px; border-right: 0; border-bottom: 1px solid #dce4dd; }
+  .support-content, .admin-support-thread { min-height: 430px; padding: 12px; }
+  .support-thread-heading { align-items: stretch; flex-direction: column; }
+  .support-thread-heading select { width: 100%; }
+  .admin-support-toolbar { align-items: stretch; flex-direction: column; }
+  .admin-support-toolbar label { flex-basis: auto; }
 }

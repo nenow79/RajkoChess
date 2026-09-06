@@ -19,6 +19,8 @@ from db.models.identity import Identity
 from db.models.payment_order import PaymentOrder
 from db.models.plan_grant import PlanGrant
 from db.models.runtime_setting import RuntimeSetting
+from db.models.support_message import SupportMessage
+from db.models.support_ticket import SupportTicket
 from db.models.usage_event import UsageEvent
 from db.models.user import User
 
@@ -40,6 +42,8 @@ __all__ = [
     "PaymentOrder",
     "PlanGrant",
     "RuntimeSetting",
+    "SupportMessage",
+    "SupportTicket",
     "SystemRole",
     "User",
     "UserStatus",

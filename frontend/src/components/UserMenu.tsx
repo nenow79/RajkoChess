@@ -6,6 +6,8 @@ import { getMyPlan, type PlanSummary } from "../admin/api";
 import AdminPanel from "./AdminPanel";
 import AccountSettings from "./AccountSettings";
 import PaymentDialog from "./PaymentDialog";
+import SupportDialog from "./SupportDialog";
+import { getAdminSupportUnreadCount, getSupportUnreadCount } from "../support/api";
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
@@ -21,9 +23,13 @@ export default function UserMenu() {
   const [plan, setPlan] = useState<PlanSummary | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [adminInitialView, setAdminInitialView] = useState<"statistics" | "support">("statistics");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paymentsOpen, setPaymentsOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [supportUnreadCount, setSupportUnreadCount] = useState(0);
+  const [adminSupportUnreadCount, setAdminSupportUnreadCount] = useState(0);
 
   const loadPlan = useCallback(
     () => getMyPlan().then(setPlan).catch(() => setPlan(null)),
@@ -39,6 +45,19 @@ export default function UserMenu() {
       window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
     }
   }, [loadPlan]);
+
+  const loadUnreadCounts = useCallback(() => {
+    void getSupportUnreadCount().then(setSupportUnreadCount).catch(() => undefined);
+    if (user?.system_role === "admin") {
+      void getAdminSupportUnreadCount().then(setAdminSupportUnreadCount).catch(() => undefined);
+    }
+  }, [user?.system_role]);
+
+  useEffect(() => {
+    loadUnreadCounts();
+    const timer = window.setInterval(loadUnreadCounts, 60_000);
+    return () => window.clearInterval(timer);
+  }, [loadUnreadCounts]);
 
   useEffect(() => {
     if (!accountMenuOpen && !planOpen) return;
@@ -78,6 +97,36 @@ export default function UserMenu() {
   return (
     <div className="user-menu" ref={menuRef}>
       <button
+        className="support-icon-button"
+        type="button"
+        title={user.system_role === "admin" ? "Zgłoszenia użytkowników" : "Pomoc i pomysły"}
+        aria-label={user.system_role === "admin"
+          ? `Zgłoszenia użytkowników${adminSupportUnreadCount ? `, ${adminSupportUnreadCount} nieprzeczytanych wiadomości` : ""}`
+          : `Pomoc i pomysły${supportUnreadCount ? `, ${supportUnreadCount} nieprzeczytanych wiadomości` : ""}`}
+        onClick={() => {
+          setAccountMenuOpen(false);
+          setPlanOpen(false);
+          if (user.system_role === "admin") {
+            setAdminInitialView("support");
+            setAdminOpen(true);
+          } else {
+            setSupportOpen(true);
+          }
+        }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+          <path d="M4.5 6.75h15v10.5h-15z" />
+          <path d="m5 7.25 7 5.5 7-5.5" />
+        </svg>
+        {(user.system_role === "admin" ? adminSupportUnreadCount : supportUnreadCount) > 0 && (
+          <i className="notification-badge">
+            {(user.system_role === "admin" ? adminSupportUnreadCount : supportUnreadCount) > 99
+              ? "99+"
+              : user.system_role === "admin" ? adminSupportUnreadCount : supportUnreadCount}
+          </i>
+        )}
+      </button>
+      <button
         type="button"
         className="user-account-trigger"
         aria-haspopup="menu"
@@ -110,7 +159,7 @@ export default function UserMenu() {
           <div className="user-account-popover-heading"><strong>{user.display_name || "Twoje konto"}</strong><small>{user.email}</small></div>
           <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setPlanOpen(true); void loadPlan(); }}><span aria-hidden="true">◔</span> Wykorzystanie planu</button>
           <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setSettingsOpen(true); }}><span aria-hidden="true">⚙</span> Ustawienia konta</button>
-          {user.system_role === "admin" && <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setAdminOpen(true); }}><span aria-hidden="true">▦</span> Administracja</button>}
+          {user.system_role === "admin" && <button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setAdminInitialView("statistics"); setAdminOpen(true); }}><span aria-hidden="true">▦</span> Administracja{adminSupportUnreadCount > 0 && <i className="notification-badge menu-badge">{adminSupportUnreadCount > 99 ? "99+" : adminSupportUnreadCount}</i>}</button>}
           <div className="user-account-menu-separator" />
           <button className="logout-action" type="button" role="menuitem" onClick={handleLogout} disabled={busy}><span aria-hidden="true">↪</span> {busy ? "Wylogowywanie…" : "Wyloguj"}</button>
         </div>
@@ -130,9 +179,10 @@ export default function UserMenu() {
           {plan.key !== "admin" && <button className="plan-buy-button" type="button" onClick={() => { setPlanOpen(false); setPaymentsOpen(true); }}>Kup Premium</button>}
         </div>
       )}
-      {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
+      {adminOpen && <AdminPanel onClose={() => { setAdminOpen(false); loadUnreadCounts(); }} supportUnreadCount={adminSupportUnreadCount} onSupportUnreadChange={setAdminSupportUnreadCount} initialView={adminInitialView} />}
       {settingsOpen && <AccountSettings onClose={() => setSettingsOpen(false)} />}
       {paymentsOpen && <PaymentDialog onClose={() => { setPaymentsOpen(false); void loadPlan(); }} />}
+      {supportOpen && <SupportDialog onClose={() => { setSupportOpen(false); loadUnreadCounts(); }} onUnreadChange={setSupportUnreadCount} />}
     </div>
   );
 }

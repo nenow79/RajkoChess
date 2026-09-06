@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from db.models.identity import Identity
     from db.models.plan_grant import PlanGrant
     from db.models.payment_order import PaymentOrder
+    from db.models.support_ticket import SupportTicket
     from db.models.usage_event import UsageEvent
 
 
@@ -100,4 +101,7 @@ class User(UuidPrimaryKeyMixin, TimestampMixin, Base):
     )
     usage_events: Mapped[list[UsageEvent]] = relationship(
         back_populates="user", cascade="all, delete-orphan", passive_deletes=True
+    )
+    support_tickets: Mapped[list[SupportTicket]] = relationship(
+        back_populates="owner", cascade="all, delete-orphan", passive_deletes=True
     )

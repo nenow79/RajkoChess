@@ -13,9 +13,13 @@ import {
   type AdminUser,
   type BotStrengthSetting,
 } from "../admin/api";
+import AdminSupportView from "./AdminSupportView";
 
 interface AdminPanelProps {
   onClose: () => void;
+  supportUnreadCount: number;
+  onSupportUnreadChange: (count: number) => void;
+  initialView?: "statistics" | "support";
 }
 
 const usageLabels: Record<string, string> = {
@@ -33,8 +37,8 @@ const sourceLabels: Record<string, string> = {
 
 const formatNumber = (value: number) => new Intl.NumberFormat("pl-PL").format(value);
 
-export default function AdminPanel({ onClose }: AdminPanelProps) {
-  const [view, setView] = useState<"statistics" | "users" | "orders">("statistics");
+export default function AdminPanel({ onClose, supportUnreadCount, onSupportUnreadChange, initialView = "statistics" }: AdminPanelProps) {
+  const [view, setView] = useState<"statistics" | "users" | "orders" | "support">(initialView);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [statistics, setStatistics] = useState<AdminStatistics | null>(null);
@@ -190,6 +194,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
           <button className={view === "statistics" ? "active" : ""} type="button" onClick={() => setView("statistics")}>Statystyki</button>
           <button className={view === "users" ? "active" : ""} type="button" onClick={() => setView("users")}>Użytkownicy</button>
           <button className={view === "orders" ? "active" : ""} type="button" onClick={() => setView("orders")}>Zamówienia{orders.some(order => order.status === "pending") ? ` (${orders.filter(order => order.status === "pending").length})` : ""}</button>
+          <button className={view === "support" ? "active" : ""} type="button" onClick={() => setView("support")}>Zgłoszenia{supportUnreadCount > 0 && <i className="notification-badge">{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</i>}</button>
           <button className="admin-refresh" type="button" disabled={loading} onClick={() => void load()}>Odśwież</button>
         </nav>
         {error && <p className="auth-error" role="alert">{error}</p>}
@@ -273,6 +278,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
               {!orders.length && <tr><td colSpan={6} className="admin-empty">Brak zamówień.</td></tr>}
             </tbody></table></div>
           </section>
+        ) : view === "support" ? (
+          <AdminSupportView onUnreadChange={onSupportUnreadChange} />
         ) : null}
       </section>
     </div>

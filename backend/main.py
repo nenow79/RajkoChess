@@ -16,6 +16,8 @@ from auth.limits import (
 from auth.plans import record_usage
 from auth.router import router as auth_router
 from billing.router import router as billing_router
+from support.router import admin_router as support_admin_router
+from support.router import router as support_router
 from chess_logic.bot_catalog import (
     BotNotFoundError,
     BotPermissionError,
@@ -92,6 +94,8 @@ app = FastAPI(title="Chess API")
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(billing_router)
+app.include_router(support_router)
+app.include_router(support_admin_router)
 
 
 class ChatRequest(BaseModel):

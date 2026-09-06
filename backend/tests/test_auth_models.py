@@ -20,6 +20,8 @@ from db.models import (
     PaymentOrder,
     PlanGrant,
     SystemRole,
+    SupportMessage,
+    SupportTicket,
     User,
     UserStatus,
     UsageEvent,
@@ -47,6 +49,8 @@ class AuthModelMetadataTests(unittest.TestCase):
                 "chess_platform_accounts",
                 "runtime_settings",
                 "payment_orders",
+                "support_tickets",
+                "support_messages",
             },
         )
 
@@ -133,6 +137,23 @@ class AuthModelMetadataTests(unittest.TestCase):
         constraints = {constraint.name for constraint in table.constraints}
         self.assertIn("uq_chess_platform_accounts_user_provider", constraints)
         self.assertIn("ck_chess_platform_accounts_provider_normalized", constraints)
+
+    def test_support_tickets_and_messages_have_bounded_values(self):
+        ticket_checks = {
+            constraint.name
+            for constraint in cast(Table, SupportTicket.__table__).constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        message_checks = {
+            constraint.name
+            for constraint in cast(Table, SupportMessage.__table__).constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        self.assertIn("ck_support_tickets_category_allowed", ticket_checks)
+        self.assertIn("ck_support_tickets_status_allowed", ticket_checks)
+        self.assertIn("ck_support_tickets_subject_length", ticket_checks)
+        self.assertIn("ck_support_messages_author_role_allowed", message_checks)
+        self.assertIn("ck_support_messages_content_length", message_checks)
 
     def test_bot_visibility_requires_an_owner_only_for_private_bots(self):
         checks = {

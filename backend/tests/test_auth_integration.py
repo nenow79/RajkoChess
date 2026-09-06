@@ -3,7 +3,7 @@ import unittest
 import uuid
 from unittest.mock import AsyncMock, patch
 
-from db.models import ChatMessage
+from db.models import ChatMessage, SupportMessage
 from db.session import get_db_session, get_engine
 from httpx import ASGITransport, AsyncClient
 from main import app
@@ -49,6 +49,10 @@ class AuthenticationApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
             new=capture_verification_email,
         )
         self.rate_patch.start()
+        self.support_rate_patch = patch(
+            "support.router.enforce_rate_limit", new=AsyncMock()
+        )
+        self.support_rate_patch.start()
         self.clear_rate_patch.start()
         self.email_patch.start()
         self.client = AsyncClient(
@@ -58,6 +62,7 @@ class AuthenticationApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.client.aclose()
+        self.support_rate_patch.stop()
         self.email_patch.stop()
         self.clear_rate_patch.stop()
         self.rate_patch.stop()
@@ -203,6 +208,42 @@ class AuthenticationApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored_position.json()["metadata"]["opponent"], "Tester")
         self.assertEqual(restored_position.json()["source"], "chesscom")
         self.assertEqual(restored_position.json()["pgn"], import_payload["pgn"])
+
+        created_ticket = await self.client.post(
+            "/api/support/tickets",
+            json={
+                "category": "idea",
+                "subject": "Powtórki błędów",
+                "message": "Przydałaby się kolejka pozycji do powtórzenia.",
+            },
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(created_ticket.status_code, 201, created_ticket.text)
+        ticket_id = created_ticket.json()["id"]
+        self.assertEqual(created_ticket.json()["unread_count"], 0)
+
+        admin_message = SupportMessage(
+            ticket_id=uuid.UUID(ticket_id),
+            author_id=None,
+            author_role="admin",
+            content="Dziękujemy, zapisaliśmy ten pomysł.",
+        )
+        self.db.add(admin_message)
+        await self.db.commit()
+
+        unread = await self.client.get("/api/support/unread-count")
+        self.assertEqual(unread.json()["unread_count"], 1)
+        ticket_detail = await self.client.get(f"/api/support/tickets/{ticket_id}")
+        self.assertEqual(ticket_detail.status_code, 200, ticket_detail.text)
+        self.assertEqual(ticket_detail.json()["messages"][-1]["author_role"], "admin")
+
+        marked_read = await self.client.post(
+            f"/api/support/tickets/{ticket_id}/read",
+            json={"through_message_id": str(admin_message.id)},
+            headers={"X-CSRF-Token": csrf_token},
+        )
+        self.assertEqual(marked_read.status_code, 200, marked_read.text)
+        self.assertEqual(marked_read.json()["unread_count"], 0)
 
         logged_out = await self.client.post(
             "/api/auth/logout",
