@@ -295,6 +295,7 @@ async def generate_chess_analysis(
     lichess_data: dict,
     stockfish_data: dict,
     user_prompt: str | None = None,
+    position_label: str | None = None,
     model: str | None = None,
 ) -> LLMResult:
     """
@@ -323,6 +324,7 @@ async def generate_chess_analysis(
     # Budujemy kontekst - pakujemy nasze słowniki Pythona do ładnych stringów JSON
     context = f"""
     Aktualna pozycja (FEN): {fen}
+    Moment partii: {position_label or "bieżąca pozycja na szachownicy"}
 
     Nazwa otwarcia w danych Lichess może mieć opening_is_fallback=true.
     Oznacza to ostatnie znane otwarcie z wcześniejszej pozycji w tej partii,
@@ -395,7 +397,11 @@ async def generate_game_analysis(
     2. Najważniejsze momenty zwrotne, ze szczególnym uwzględnieniem ruchów gracza.
     3. Wyjaśnienie przyczyn błędów i lepszych planów, nie tylko samych wariantów.
     4. Trzy konkretne zalecenia treningowe.
-    Stosuj zwięzły Markdown i szachową notację SAN.
+    Stosuj zwięzły Markdown i szachową notację SAN. Gdy odwołujesz się do ruchu
+    zagranego w partii, używaj dokładnego pola move_label z danych krytycznego
+    momentu, np. 15. Gxf7+ albo 15... Kxf7. Numer i SAN zapisuj razem i nie
+    rozdzielaj ich formatowaniem Markdown. Dzięki temu interfejs może zamienić
+    prawdziwe ruchy na odnośniki.
     """
     llm_engine_context = {
         "headers": engine_analysis.get("headers"),

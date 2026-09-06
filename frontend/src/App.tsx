@@ -493,6 +493,8 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
               handleAnalysisMarkerChange(true);
             }}
             onChatChanged={handleAnalysisMarkerChange}
+            navigation={gameNavigation}
+            onNavigate={handleNavigate}
           />
         </div>
 

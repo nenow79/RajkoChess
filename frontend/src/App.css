@@ -1529,6 +1529,87 @@
   position: relative;
 }
 
+.chat-position-picker {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d8c6df;
+  border-radius: 6px;
+  background: #faf6fc;
+  color: #65436f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-position-picker > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 34px minmax(120px, 1fr) 34px auto;
+  gap: 5px;
+}
+
+.chat-position-picker button,
+.chat-position-picker select {
+  min-height: 34px;
+  border: 1px solid #c9a3d8;
+  border-radius: 5px;
+  background: #fff;
+  color: #623277;
+  font: inherit;
+}
+
+.chat-position-picker button {
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.chat-position-picker button:disabled,
+.chat-position-picker select:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.chat-position-picker .show-chat-position {
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.chat-position-badge {
+  margin-left: 7px;
+  padding: 2px 6px;
+  border: 1px solid rgba(125, 60, 152, .35);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .62);
+  color: #6d3384;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.chat-move-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dashed currentColor;
+  background: transparent;
+  color: #71368a;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.chat-move-link:hover,
+.chat-position-badge:hover {
+  color: #4d1d61;
+  border-color: currentColor;
+}
+
 .chat-character-count {
   position: absolute;
   right: 0;
@@ -1844,6 +1925,7 @@
   }
 
   .board-col {
+    grid-row: 1;
     width: 100%;
     max-width: min(600px, 100%);
     justify-self: center;
@@ -1857,7 +1939,10 @@
 
   .chat-col {
     grid-column: auto;
+    grid-row: 2;
   }
+
+  .stats-col { grid-row: 3; }
 
   .chat-container {
     height: min(70dvh, 620px);
@@ -1868,6 +1953,15 @@
   .chat-header-controls {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .chat-position-picker {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chat-position-picker > div {
+    grid-template-columns: 38px minmax(0, 1fr) 38px auto;
   }
 
   .variation-banner {

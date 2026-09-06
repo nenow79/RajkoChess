@@ -28,6 +28,10 @@ class ChatMessage(UuidPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint(
             "message_order BETWEEN 0 AND 10", name="message_order_range"
         ),
+        CheckConstraint(
+            "position_ply IS NULL OR position_ply BETWEEN 0 AND 600",
+            name="position_ply_range",
+        ),
         Index("ix_chat_messages_game_created_at", "game_id", "created_at"),
         Index("ix_chat_messages_owner_created_at", "owner_id", "created_at"),
     )
@@ -42,6 +46,7 @@ class ChatMessage(UuidPrimaryKeyMixin, TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(String(24), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     fen: Mapped[str | None] = mapped_column(String(128))
+    position_ply: Mapped[int | None] = mapped_column(SmallInteger)
     message_order: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
 
     owner: Mapped[User] = relationship(back_populates="chat_messages")

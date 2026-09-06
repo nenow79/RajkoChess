@@ -100,6 +100,7 @@ app.include_router(support_admin_router)
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
+    position_ply: int | None = Field(default=None, ge=0, le=600)
 
 
 class ImportGameRequest(BaseModel):
@@ -848,7 +849,19 @@ async def chat_with_agent(
     if not is_chess_request(request.message):
         raise HTTPException(status_code=400, detail=OUT_OF_SCOPE_MESSAGE)
 
-    current_fen = game.get_fen()
+    position_ply = request.position_ply
+    position_label = None
+    position_history = game.get_history()
+    if position_ply is not None:
+        try:
+            position = game.get_imported_position_at_ply(position_ply)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        current_fen = position["fen"]
+        position_history = position["history"]
+        position_label = position["move_label"]
+    else:
+        current_fen = game.get_fen()
     selected_model = get_default_model()
 
     current_task = asyncio.current_task()
@@ -871,7 +884,7 @@ async def chat_with_agent(
                 time_limit=min(max(time_limit, 0.05), 2.0),
                 multipv=min(max(lines, 1), 5),
             )
-            fallback_opening = identify_opening(game.get_history())
+            fallback_opening = identify_opening(position_history)
             try:
                 lichess_data = await get_opening_explorer_data(
                     current_fen,
@@ -895,6 +908,7 @@ async def chat_with_agent(
                 lichess_data=lichess_data,
                 stockfish_data=stockfish_data,
                 user_prompt=request.message,
+                position_label=position_label,
                 model=selected_model,
             )
             usage_details.update(llm_result.usage)
@@ -912,10 +926,15 @@ async def chat_with_agent(
                         ("assistant", "position", llm_result.text),
                     ),
                     fen=current_fen,
+                    position_ply=position_ply,
                 )
 
         last_ai_analyses[session_id] = llm_result.text
-        return {"response": llm_result.text}
+        return {
+            "response": llm_result.text,
+            "position_ply": position_ply,
+            "position_label": position_label,
+        }
 
     except asyncio.CancelledError:
         raise HTTPException(status_code=499, detail="Analiza została przerwana")

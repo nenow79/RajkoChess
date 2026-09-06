@@ -109,6 +109,12 @@ async def analyze_game(
         for ply, move in enumerate(parsed_game.mainline_moves(), start=1):
             mover = "white" if board.turn == chess.WHITE else "black"
             played_san = board.san(move)
+            move_number = (ply + 1) // 2
+            move_label = (
+                f"{move_number}. {played_san}"
+                if mover == "white"
+                else f"{move_number}... {played_san}"
+            )
             best_move = before_info.get("pv", [None])[0]
             best_move_san = board.san(best_move) if best_move else None
             best_line_san = _line_to_san(board, before_info.get("pv", [])[:4])
@@ -127,7 +133,8 @@ async def analyze_game(
             moments.append(
                 {
                     "ply": ply,
-                    "move_number": (ply + 1) // 2,
+                    "move_number": move_number,
+                    "move_label": move_label,
                     "color": mover,
                     "played": played_san,
                     "best_move": best_move_san,

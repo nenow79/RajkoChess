@@ -173,6 +173,37 @@ class ChessGame:
             navigation_move=navigation_move,
         )
 
+    def get_imported_position_at_ply(self, ply: int) -> dict:
+        """Build an imported-game position without changing the review board."""
+        if not self.imported_pgn:
+            raise ValueError("Najpierw zaimportuj zakończoną partię")
+        if ply < 0 or ply > len(self.imported_moves):
+            raise ValueError("Wybrany ruch nie istnieje w tej partii")
+
+        parsed_game = chess.pgn.read_game(StringIO(self.imported_pgn))
+        if parsed_game is None:
+            raise ValueError("Nie udało się odczytać zapisu PGN")
+
+        board = parsed_game.board()
+        move_label = "Pozycja startowa"
+        for current_ply, move in enumerate(self.imported_moves[:ply], start=1):
+            played_san = board.san(move)
+            board.push(move)
+            if current_ply == ply:
+                move_number = (current_ply + 1) // 2
+                move_label = (
+                    f"{move_number}. {played_san}"
+                    if current_ply % 2
+                    else f"{move_number}... {played_san}"
+                )
+
+        return {
+            "fen": board.fen(),
+            "history": [move.uci() for move in board.move_stack],
+            "ply": ply,
+            "move_label": move_label,
+        }
+
     def _imported_position_response(
         self,
         headers: dict,

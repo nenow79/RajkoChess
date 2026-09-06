@@ -70,6 +70,7 @@ export interface StoredChatMessage {
   kind: "position" | "game_review" | "translation";
   content: string;
   fen: string | null;
+  position_ply: number | null;
   created_at: string;
 }
 

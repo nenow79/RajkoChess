@@ -39,6 +39,27 @@ class ImportedPositionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "FEN"):
             ChessGame().load_fen("to nie jest FEN")
 
+    def test_reads_an_imported_position_without_moving_review_board(self):
+        game = ChessGame()
+        game.load_pgn("1. e4 e5 2. Nf3 *", {"source": "pgn"})
+        original_fen = game.get_fen()
+
+        position = game.get_imported_position_at_ply(1)
+
+        self.assertEqual(position["ply"], 1)
+        self.assertEqual(position["move_label"], "1. e4")
+        self.assertEqual(position["history"], ["e2e4"])
+        self.assertNotEqual(position["fen"], original_fen)
+        self.assertEqual(game.get_fen(), original_fen)
+        self.assertEqual(game.current_ply, 3)
+
+    def test_rejects_a_position_beyond_the_imported_game(self):
+        game = ChessGame()
+        game.load_pgn("1. e4 e5 *", {"source": "pgn"})
+
+        with self.assertRaisesRegex(ValueError, "nie istnieje"):
+            game.get_imported_position_at_ply(3)
+
 
 if __name__ == "__main__":
     unittest.main()

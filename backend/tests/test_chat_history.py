@@ -21,6 +21,7 @@ class ChatHistoryTests(unittest.IsolatedAsyncioTestCase):
                 ("assistant", "position", "Najlepsze jest e4."),
             ),
             fen="8/8/8/8/8/8/8/K6k w - - 0 1",
+            position_ply=17,
         )
 
         self.assertEqual([model.role for model in models], ["user", "assistant"])
@@ -28,6 +29,7 @@ class ChatHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(model.owner_id == owner_id for model in models))
         self.assertTrue(all(model.game_id == game_id for model in models))
         self.assertTrue(all(model.fen is not None for model in models))
+        self.assertTrue(all(model.position_ply == 17 for model in models))
         db.add_all.assert_called_once_with(models)
         db.flush.assert_awaited_once()
 

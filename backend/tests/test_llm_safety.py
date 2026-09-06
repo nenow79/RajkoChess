@@ -6,6 +6,7 @@ from chess_logic.llm_agent import (
     OUT_OF_SCOPE_MESSAGE,
     generate_bot_game_greeting,
     generate_chess_analysis,
+    generate_game_analysis,
     is_full_game_analysis_request,
     is_chess_request,
     sanitize_metadata_for_llm,
@@ -179,6 +180,29 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
         )
         system_prompt = await_args.kwargs["messages"][0]["content"]
         self.assertIn("wyłącznie przekazaną analizę szachową", system_prompt)
+
+    async def test_game_analysis_requests_exact_clickable_move_labels(self):
+        create = AsyncMock(return_value=completion_response("Błąd nastąpił po 2. Nf3."))
+        with (
+            patch("chess_logic.llm_agent.has_openrouter_api_key", return_value=True),
+            patch("chess_logic.llm_agent.client.chat.completions.create", create),
+        ):
+            await generate_game_analysis(
+                pgn="1. e4 e5 2. Nf3 *",
+                engine_analysis={
+                    "headers": {},
+                    "move_count": 3,
+                    "critical_moments": [{"ply": 3, "move_label": "2. Nf3"}],
+                },
+                metadata={"source": "pgn"},
+            )
+
+        await_args = create.await_args
+        assert await_args is not None
+        system_prompt = await_args.kwargs["messages"][0]["content"]
+        self.assertIn("dokładnego pola move_label", system_prompt)
+        user_context = await_args.kwargs["messages"][1]["content"]
+        self.assertIn('"move_label": "2. Nf3"', user_context)
 
 
 if __name__ == "__main__":

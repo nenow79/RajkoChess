@@ -15,6 +15,7 @@ async def add_chat_messages(
     game_id: uuid.UUID,
     messages: Iterable[tuple[str, str, str]],
     fen: str | None,
+    position_ply: int | None = None,
 ) -> list[ChatMessage]:
     models = [
         ChatMessage(
@@ -24,6 +25,7 @@ async def add_chat_messages(
             kind=kind,
             content=content,
             fen=fen,
+            position_ply=position_ply,
             message_order=message_order,
         )
         for message_order, (role, kind, content) in enumerate(messages)
@@ -83,12 +85,13 @@ async def clear_chat_messages(
     )
 
 
-def chat_message_response(model: ChatMessage) -> dict[str, str | None]:
+def chat_message_response(model: ChatMessage) -> dict[str, str | int | None]:
     return {
         "id": str(model.id),
         "role": model.role,
         "kind": model.kind,
         "content": model.content,
         "fen": model.fen,
+        "position_ply": model.position_ply,
         "created_at": model.created_at.isoformat(),
     }
