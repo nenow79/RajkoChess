@@ -55,10 +55,11 @@ modelu. Nie należy wpisywać do pytań danych osobowych ani poufnych. Administr
 powinien przed betą udokumentować aktualnych dostawców modeli, warunki retencji,
 lokalizacje przetwarzania i mechanizm transferu poza EOG.
 
-Import Chess.com i dane Lichess Explorer powodują zapytania serwera Rajko Chess
-do tych usług. Nazwa konta Chess.com podana przez testera jest używana do
-pobrania publicznych partii. Należy uzupełnić listę podmiotów i odnośniki do ich
-zasad prywatności po zatwierdzeniu produkcyjnej konfiguracji.
+Import Chess.com, import Lichess i dane Lichess Explorer powodują zapytania
+serwera Rajko Chess do tych usług. Nazwa konta Chess.com lub Lichess podana przez
+testera jest używana do pobrania publicznych partii. Należy uzupełnić listę
+podmiotów i odnośniki do ich zasad prywatności po zatwierdzeniu produkcyjnej
+konfiguracji.
 
 ## Prawa testera
 

@@ -24,7 +24,7 @@ export interface GameAnalysis {
   evaluation_series: EvaluationPoint[];
 }
 
-export interface ChessComGame {
+export interface OnlineGame {
   id: string;
   pgn: string;
   color: PlayerColor;
@@ -40,6 +40,9 @@ export interface ChessComGame {
   [key: string]: unknown;
 }
 
+export type ChessComGame = OnlineGame;
+export type LichessGame = OnlineGame;
+
 export interface ImportedGame {
   pgn: string;
   source?: StoredGameSummary["source"];
@@ -54,7 +57,7 @@ export interface ImportedGame {
 
 export interface StoredGameSummary {
   id: string;
-  source: "chesscom" | "bot" | "pgn";
+  source: "chesscom" | "lichess" | "bot" | "pgn";
   external_id: string | null;
   played_at: string | null;
   opponent: string | null;

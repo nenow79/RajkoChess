@@ -57,7 +57,10 @@ from chess_logic.history import (
     persist_imported_game,
     record_completed_analysis,
 )
-from chess_logic.lichess import get_opening_explorer_data
+from chess_logic.lichess import (
+    get_opening_explorer_data,
+    get_recent_games as get_recent_lichess_games,
+)
 from chess_logic.llm_agent import (
     FULL_GAME_ANALYSIS_MESSAGE,
     LLMServiceError,
@@ -673,6 +676,61 @@ async def chesscom_recent_games(
         )
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Brak połączenia z Chess.com API")
+
+
+@app.get("/api/lichess/{username}/recent")
+async def lichess_recent_games(
+    request: Request,
+    username: str = Path(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9_-]+$"),
+    limit: int = 12,
+    current: CurrentAuth = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db_session),
+):
+    await enforce_rate_limit(
+        bucket="lichess_ip",
+        identity=request_ip(request),
+        limit=60,
+        window_seconds=300,
+    )
+    try:
+        async with limited_operation(
+            db,
+            user=current.user,
+            operation="lichess_import",
+            concurrency_group="external_api",
+            lock_ttl_seconds=30,
+        ):
+            recent_games = await get_recent_lichess_games(
+                username, min(max(limit, 1), 30)
+            )
+            stored_by_external_id = await get_owned_games_by_external_ids(
+                db,
+                user=current.user,
+                source=GameSource.LICHESS,
+                external_ids=[
+                    str(item["id"]) for item in recent_games if item.get("id")
+                ],
+            )
+            activity_game_ids = await games_with_analysis_activity(
+                db,
+                user=current.user,
+                game_ids=[item.id for item in stored_by_external_id.values()],
+            )
+            for item in recent_games:
+                stored = stored_by_external_id.get(str(item.get("id")))
+                item["stored_game_id"] = str(stored.id) if stored else None
+                item["has_analysis"] = bool(
+                    stored and stored.id in activity_game_ids
+                )
+            return {"username": username, "games": recent_games}
+    except httpx.HTTPStatusError as e:
+        status_code = 404 if e.response.status_code == 404 else e.response.status_code
+        raise HTTPException(
+            status_code=status_code,
+            detail="Nie udało się pobrać partii z Lichess",
+        )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Brak połączenia z Lichess API")
 
 
 @app.post("/api/import-game")

@@ -3,22 +3,29 @@ import axios from "axios";
 
 import { getAuthErrorMessage } from "../auth/api";
 import { API_URL } from "../config";
-import type { ChessComGame, HistoricalGameOpen, ImportedGame, StoredGameSummary } from "../types";
+import type { ChessComGame, HistoricalGameOpen, ImportedGame, LichessGame, OnlineGame, StoredGameSummary } from "../types";
 
 type SourceTab = "online" | "library" | "import";
 type LibraryFilter = "all" | StoredGameSummary["source"];
 type ImportFormat = "pgn" | "fen";
+type OnlineProvider = "chesscom" | "lichess";
 
 interface AnalysisSourcePanelProps {
   username: string;
   chessComGames: ChessComGame[];
   isLoadingChessCom: boolean;
+  lichessUsername: string;
+  lichessGames: LichessGame[];
+  isLoadingLichess: boolean;
   importedGame: ImportedGame | null;
   isFenPosition: boolean;
   activeGameId?: string;
   onChessComImport: (game: ChessComGame) => void;
   onChessComRefresh: (username?: string) => void;
   onUsernameChange: (username: string) => void;
+  onLichessImport: (game: LichessGame) => void;
+  onLichessRefresh: (username?: string) => void;
+  onLichessUsernameChange: (username: string) => void;
   onManualImport: (format: ImportFormat, value: string) => Promise<void>;
   onOpenStoredGame: (game: HistoricalGameOpen) => void;
   onError: (message: string) => void;
@@ -26,6 +33,7 @@ interface AnalysisSourcePanelProps {
 
 const SOURCE_LABELS: Record<StoredGameSummary["source"], string> = {
   chesscom: "Chess.com",
+  lichess: "Lichess",
   bot: "Bot Rajko",
   pgn: "Import PGN",
 };
@@ -52,12 +60,18 @@ export default function AnalysisSourcePanel({
   username,
   chessComGames,
   isLoadingChessCom,
+  lichessUsername,
+  lichessGames,
+  isLoadingLichess,
   importedGame,
   isFenPosition,
   activeGameId,
   onChessComImport,
   onChessComRefresh,
   onUsernameChange,
+  onLichessImport,
+  onLichessRefresh,
+  onLichessUsernameChange,
   onManualImport,
   onOpenStoredGame,
   onError,
@@ -65,6 +79,8 @@ export default function AnalysisSourcePanel({
   const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<SourceTab>("online");
   const [draftUsername, setDraftUsername] = useState(username);
+  const [onlineProvider, setOnlineProvider] = useState<OnlineProvider>("chesscom");
+  const [draftLichessUsername, setDraftLichessUsername] = useState(lichessUsername);
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [storedGames, setStoredGames] = useState<StoredGameSummary[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
@@ -104,6 +120,7 @@ export default function AnalysisSourcePanel({
 
   const openModal = () => {
     setDraftUsername(username);
+    setDraftLichessUsername(lichessUsername);
     setIsOpen(true);
     if (tab === "library") loadLibrary();
   };
@@ -127,6 +144,18 @@ export default function AnalysisSourcePanel({
 
   const selectChessComGame = (game: ChessComGame) => {
     onChessComImport(game);
+    setIsOpen(false);
+  };
+
+  const handleLichessSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalized = draftLichessUsername.trim();
+    setDraftLichessUsername(normalized);
+    onLichessUsernameChange(normalized);
+  };
+
+  const selectLichessGame = (game: LichessGame) => {
+    onLichessImport(game);
     setIsOpen(false);
   };
 
@@ -163,6 +192,8 @@ export default function AnalysisSourcePanel({
     ? "Import PGN"
     : importedGame?.source === "bot" || importedGame?.bot
       ? "Bot Rajko"
+      : importedGame?.source === "lichess"
+        ? "Lichess"
       : importedGame
         ? "Chess.com"
         : isFenPosition
@@ -208,11 +239,14 @@ export default function AnalysisSourcePanel({
                   <div className="online-provider-row">
                     <label>
                       Serwis
-                      <select value="chesscom" disabled><option value="chesscom">Chess.com</option></select>
+                      <select value={onlineProvider} onChange={(event) => setOnlineProvider(event.target.value as OnlineProvider)}>
+                        <option value="chesscom">Chess.com</option>
+                        <option value="lichess">Lichess</option>
+                      </select>
                     </label>
-                    <small>Kolejne serwisy pojawią się w tym miejscu.</small>
+                    <small>Wybierz serwis i podaj publiczny login gracza.</small>
                   </div>
-                  <form className="online-username-form" onSubmit={handleChessComSubmit}>
+                  {onlineProvider === "chesscom" ? <form className="online-username-form" onSubmit={handleChessComSubmit}>
                     <label>
                       Użytkownik Chess.com
                       <input
@@ -229,14 +263,31 @@ export default function AnalysisSourcePanel({
                     <button type="submit" disabled={!draftUsername.trim() || isLoadingChessCom}>Pobierz partie</button>
                     {username && <button type="button" className="secondary" onClick={() => onChessComRefresh()} disabled={isLoadingChessCom}>Odśwież</button>}
                   </form>
-                  {isLoadingChessCom ? (
+                  : <form className="online-username-form" onSubmit={handleLichessSubmit}>
+                    <label>
+                      Użytkownik Lichess
+                      <input
+                        type="text"
+                        value={draftLichessUsername}
+                        onChange={(event) => setDraftLichessUsername(event.target.value.slice(0, 50))}
+                        maxLength={50}
+                        pattern="[A-Za-z0-9_-]+"
+                        placeholder="Login Lichess"
+                        autoComplete="off"
+                        disabled={isLoadingLichess}
+                      />
+                    </label>
+                    <button type="submit" disabled={!draftLichessUsername.trim() || isLoadingLichess}>Pobierz partie</button>
+                    {lichessUsername && <button type="button" className="secondary" onClick={() => onLichessRefresh()} disabled={isLoadingLichess}>Odśwież</button>}
+                  </form>}
+                  {(onlineProvider === "chesscom" ? isLoadingChessCom : isLoadingLichess) ? (
                     <p className="source-empty">Pobieram ostatnie partie…</p>
-                  ) : chessComGames.length === 0 ? (
+                  ) : (onlineProvider === "chesscom" ? chessComGames : lichessGames).length === 0 ? (
                     <p className="source-empty">Wpisz dowolny login i pobierz ostatnie partie. Login z ustawień jest tylko wartością domyślną.</p>
                   ) : (
                     <div className="analysis-game-list">
-                      {chessComGames.map((game) => (
-                        <button type="button" key={game.id} onClick={() => selectChessComGame(game)}>
+                      {(onlineProvider === "chesscom" ? chessComGames : lichessGames).map((game: OnlineGame) => (
+                        <button type="button" key={game.id} onClick={() => onlineProvider === "chesscom" ? selectChessComGame(game) : selectLichessGame(game)}>
                           <span className="game-list-main">
                             <strong>{game.color === "white" ? "Białe" : "Czarne"} vs {game.opponent}</strong>
                             <small>{game.result} · {game.time_class} · {game.rating} / {game.opponent_rating}{formatMoveCount(game.move_count)}</small>
@@ -255,7 +306,7 @@ export default function AnalysisSourcePanel({
               {tab === "library" && (
                 <div className="library-source-view">
                   <div className="library-filters" aria-label="Filtr zapisanych partii">
-                    {(["all", "chesscom", "bot", "pgn"] as LibraryFilter[]).map((filter) => (
+                    {(["all", "chesscom", "lichess", "bot", "pgn"] as LibraryFilter[]).map((filter) => (
                       <button type="button" key={filter} className={libraryFilter === filter ? "active" : ""} onClick={() => selectLibraryFilter(filter)}>
                         {filter === "all" ? "Wszystkie" : SOURCE_LABELS[filter]}
                       </button>
@@ -269,7 +320,7 @@ export default function AnalysisSourcePanel({
                     <div className="analysis-game-list">
                       {storedGames.map((game) => (
                         <button type="button" key={game.id} className={game.id === activeGameId ? "active" : ""} disabled={openingId !== null} onClick={() => openStoredGame(game.id)}>
-                          <span className="game-source-icon" aria-hidden="true">{game.source === "chesscom" ? "♟" : game.source === "bot" ? "🤖" : "↥"}</span>
+                          <span className="game-source-icon" aria-hidden="true">{game.source === "bot" ? "🤖" : game.source === "pgn" ? "↥" : "♟"}</span>
                           <span className="game-list-main">
                             <strong>{game.opponent || SOURCE_LABELS[game.source]}</strong>
                             <small>{SOURCE_LABELS[game.source]}{game.result ? ` · ${game.result}` : ""}</small>

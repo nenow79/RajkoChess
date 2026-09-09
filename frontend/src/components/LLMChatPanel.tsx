@@ -185,11 +185,11 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   const handleAnalyzeGame = async () => {
     if (!importedGame || isLoading) return;
 
-    const isChessComGame = Boolean(importedGame.id && importedGame.source !== "pgn" && !importedGame.bot);
+    const isOnlineGame = importedGame.source === "chesscom" || importedGame.source === "lichess";
     const gameLabel = importedGame.source === "pgn"
       ? `zaimportowaną partię${importedGame.opponent ? ` ${importedGame.opponent}` : ""}`
       : `partię przeciwko ${importedGame.opponent || "przeciwnikowi"}`;
-    const reviewPrompt = `Przeanalizuj całą ${gameLabel}${isChessComGame && playerUsername ? ` z perspektywy gracza ${playerUsername}` : ""}.`;
+    const reviewPrompt = `Przeanalizuj całą ${gameLabel}${isOnlineGame && playerUsername ? ` z perspektywy gracza ${playerUsername}` : ""}.`;
     setMessages(prev => [...prev, {
       role: "user",
       text: reviewPrompt,

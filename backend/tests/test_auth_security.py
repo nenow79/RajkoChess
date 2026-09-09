@@ -101,6 +101,17 @@ class AuthSchemaTests(unittest.TestCase):
         self.assertEqual(username["schema"]["maxLength"], 50)
         self.assertEqual(username["schema"]["pattern"], "^[A-Za-z0-9_-]+$")
 
+    def test_lichess_import_requires_session_and_validates_username(self):
+        operation = app.openapi()["paths"]["/api/lichess/{username}/recent"]["get"]
+        self.assertIn({"SessionCookie": []}, operation.get("security", []))
+        username = next(
+            parameter
+            for parameter in operation["parameters"]
+            if parameter["name"] == "username"
+        )
+        self.assertEqual(username["schema"]["maxLength"], 50)
+        self.assertEqual(username["schema"]["pattern"], "^[A-Za-z0-9_-]+$")
+
     def test_llm_model_selection_is_not_exposed_to_clients(self):
         schema = app.openapi()
         self.assertNotIn("/api/models", schema["paths"])

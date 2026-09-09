@@ -12,7 +12,7 @@ backup, monitoring i reakcję na incydenty zawiera
 - interaktywna szachownica z historią ruchów,
 - analiza pozycji przez Stockfish z wariantami MultiPV,
 - statystyki debiutowe z Lichess Opening Explorer,
-- import ostatnich partii z Chess.com,
+- import ostatnich partii z Chess.com i Lichess,
 - import i analiza zakończonej partii PGN,
 - prywatna historia zaimportowanych i rozegranych partii, zapisanych analiz oraz
   rozmów RajkoAI przypisanych do konkretnej partii,
@@ -28,11 +28,12 @@ backup, monitoring i reakcję na incydenty zawiera
 
 ### Analiza
 
-Udostępnia obecną szachownicę analityczną, MultiPV Stockfisha, Lichess Opening Explorer, import partii Chess.com, ręczny import PGN/FEN i trenera RajkoAI. Zaimportowane partie można przewijać, analizować w całości i rozgrywać od nich własne warianty. Rozmowa dotycząca zapisanej partii jest odtwarzana po jej ponownym otwarciu.
+Udostępnia obecną szachownicę analityczną, MultiPV Stockfisha, Lichess Opening Explorer, import partii Chess.com i Lichess, ręczny import PGN/FEN i trenera RajkoAI. Zaimportowane partie można przewijać, analizować w całości i rozgrywać od nich własne warianty. Rozmowa dotycząca zapisanej partii jest odtwarzana po jej ponownym otwarciu.
 
-W ustawieniach konta użytkownik może zapisać domyślny login Chess.com. Login
-automatycznie wypełnia formularz importu, ale może zostać jednorazowo zmieniony.
-Ustawienie nie oznacza zweryfikowanego połączenia ani dostępu do konta Chess.com.
+W ustawieniach konta użytkownik może zapisać domyślne loginy Chess.com i
+Lichess. Login wybranej platformy automatycznie wypełnia formularz importu, ale
+może zostać jednorazowo zmieniony. Ustawienie nie oznacza zweryfikowanego
+połączenia ani dostępu do konta na zewnętrznej platformie.
 
 ### Gra z botem
 
@@ -93,11 +94,13 @@ Jeśli masz token Lichess, dodaj też `LICHESS_API_TOKEN`; Explorer działa bez 
 Profile botów, zakończone partie, pełne analizy i rozmowy RajkoAI przypisane do
 partii są przechowywane w PostgreSQL.
 Każdy użytkownik widzi i otwiera wyłącznie własną historię. Ponowny import tej
-samej partii Chess.com aktualizuje istniejący zapis zamiast tworzyć duplikat.
+samej partii Chess.com lub Lichess aktualizuje istniejący zapis zamiast tworzyć
+duplikat.
 Pod szachownicą znajduje się jeden zwarty widget `Partia do analizy`. Otwiera
-wspólne okno wyboru partii z Chess.com, prywatnej biblioteki (Chess.com, boty i
-importy PGN) albo wklejenia PGN/FEN. Login Chess.com zapisany w ustawieniach jest
-wartością domyślną, ale można go zmienić, aby przeanalizować partie innej osoby.
+wspólne okno wyboru partii z Chess.com lub Lichess, prywatnej biblioteki
+(Chess.com, Lichess, boty i importy PGN) albo wklejenia PGN/FEN. Login wybranej
+platformy zapisany w ustawieniach jest wartością domyślną, ale można go zmienić,
+aby przeanalizować partie innej osoby.
 Jeśli użytkownik ponownie otworzy przeglądarkę w ramach tej samej sesji,
 `/api/position` zwraca również kontekst aktywnej zapisanej partii. Frontend
 odtwarza jej opis, PGN, nawigację i rozmowę RajkoAI powiązaną przez `games.id`.

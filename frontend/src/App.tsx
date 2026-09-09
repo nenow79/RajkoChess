@@ -26,6 +26,7 @@ import type {
   GameNavigation,
   HistoricalGameOpen,
   ImportedGame,
+  LichessGame,
   PositionAnalysis,
   PositionState,
   RatingRange,
@@ -44,7 +45,9 @@ interface AnalysisWorkspaceProps {
 function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsumed }: AnalysisWorkspaceProps) {
   const { platformAccounts } = useAuth();
   const savedChessComUsername = platformAccounts.find((account) => account.provider === "chesscom")?.username || "";
+  const savedLichessUsername = platformAccounts.find((account) => account.provider === "lichess")?.username || "";
   const previousSavedChessComRef = useRef(savedChessComUsername);
+  const previousSavedLichessRef = useRef(savedLichessUsername);
   const initialBotGameRef = useRef(initialBotGame);
   const consumeInitialGameRef = useRef(onInitialBotGameConsumed);
   const gameRef = useRef(new Chess());
@@ -59,6 +62,9 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const [chessComUsername, setChessComUsername] = useState(savedChessComUsername);
   const [chessComGames, setChessComGames] = useState<ChessComGame[]>([]);
   const [isLoadingChessCom, setIsLoadingChessCom] = useState(false);
+  const [lichessUsername, setLichessUsername] = useState(savedLichessUsername);
+  const [lichessGames, setLichessGames] = useState<LichessGame[]>([]);
+  const [isLoadingLichess, setIsLoadingLichess] = useState(false);
   const [error, setError] = useState("");
   const [importedGame, setImportedGame] = useState<ImportedGame | null>(null);
   const [isFenPosition, setIsFenPosition] = useState(false);
@@ -97,6 +103,15 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
     ));
     previousSavedChessComRef.current = savedChessComUsername;
   }, [savedChessComUsername]);
+
+  useEffect(() => {
+    setLichessUsername((current) => (
+      !current || current === previousSavedLichessRef.current
+        ? savedLichessUsername
+        : current
+    ));
+    previousSavedLichessRef.current = savedLichessUsername;
+  }, [savedLichessUsername]);
 
   const fetchExplorerData = (ratingRange: RatingRange = explorerRatingRange) => {
     const ratings = LICHESS_RATING_BUCKETS
@@ -160,6 +175,29 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
     if (normalizedUsername) fetchChessComGames(normalizedUsername);
   };
 
+  const fetchLichessGames = (username: string = lichessUsername) => {
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername) {
+      setIsLoadingLichess(false);
+      return;
+    }
+
+    setError("");
+    setIsLoadingLichess(true);
+    axios.get(`${API_URL}/lichess/${encodeURIComponent(normalizedUsername)}/recent?limit=12`)
+      .then((res) => setLichessGames(res.data.games))
+      .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się pobrać partii Lichess.")))
+      .finally(() => setIsLoadingLichess(false));
+  };
+
+  const handleLichessUsernameChange = (username: string) => {
+    const normalizedUsername = username.trim();
+    setLichessUsername(normalizedUsername);
+    setLichessGames([]);
+    clearImportedGameContext();
+    if (normalizedUsername) fetchLichessGames(normalizedUsername);
+  };
+
   useEffect(() => {
     const initialGame = initialBotGameRef.current;
     const positionRequest = initialGame?.pgn
@@ -217,7 +255,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
       .catch((err) => setError(getAuthErrorMessage(err, "Nie udało się odtworzyć pozycji.")));
   }, [loadStoredGameAnalysis]); // The workspace is remounted when entering analysis mode.
 
-  const handleImportGame = (selectedGame: ChessComGame) => {
+  const handleImportGame = (selectedGame: ChessComGame | LichessGame, source: "chesscom" | "lichess") => {
     axios.post(`${API_URL}/import-game`, {
       pgn: selectedGame.pgn,
       metadata: selectedGame,
@@ -226,7 +264,7 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         gameRef.current = new Chess(res.data.fen);
         setFen(res.data.fen);
         setBoardKey(prev => prev + 1);
-        setImportedGame({ ...selectedGame, source: "chesscom", storedGameId: res.data.game_id });
+        setImportedGame({ ...selectedGame, source, storedGameId: res.data.game_id });
         setIsFenPosition(false);
         loadStoredGameAnalysis(res.data.game_id);
         setNavigationMove(null);
@@ -406,9 +444,15 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const handleAnalysisMarkerChange = (hasAnalysis: boolean) => {
     const externalId = importedGame?.id;
     if (externalId) {
-      setChessComGames(current => current.map(game => (
-        game.id === externalId ? { ...game, has_analysis: hasAnalysis } : game
-      )));
+      if (importedGame?.source === "lichess") {
+        setLichessGames(current => current.map(game => (
+          game.id === externalId ? { ...game, has_analysis: hasAnalysis } : game
+        )));
+      } else if (importedGame?.source === "chesscom") {
+        setChessComGames(current => current.map(game => (
+          game.id === externalId ? { ...game, has_analysis: hasAnalysis } : game
+        )));
+      }
     }
   };
 
@@ -458,12 +502,18 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             username={chessComUsername}
             chessComGames={chessComGames}
             isLoadingChessCom={isLoadingChessCom}
+            lichessUsername={lichessUsername}
+            lichessGames={lichessGames}
+            isLoadingLichess={isLoadingLichess}
             importedGame={importedGame}
             isFenPosition={isFenPosition}
             activeGameId={importedGame?.storedGameId}
-            onChessComImport={handleImportGame}
+            onChessComImport={(game) => handleImportGame(game, "chesscom")}
             onChessComRefresh={fetchChessComGames}
             onUsernameChange={handleChessComUsernameChange}
+            onLichessImport={(game) => handleImportGame(game, "lichess")}
+            onLichessRefresh={fetchLichessGames}
+            onLichessUsernameChange={handleLichessUsernameChange}
             onManualImport={handleManualImport}
             onOpenStoredGame={handleOpenHistoricalGame}
             onError={setError}
@@ -486,7 +536,11 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         <div className="chat-col">
           <LLMChatPanel
             importedGame={importedGame}
-            playerUsername={chessComUsername}
+            playerUsername={typeof importedGame?.player === "string"
+              ? importedGame.player
+              : importedGame?.source === "lichess"
+                ? lichessUsername
+                : chessComUsername}
             onGameAnalyzed={(analysis) => {
               gameAnalysisRequestRef.current += 1;
               setGameAnalysis(analysis);

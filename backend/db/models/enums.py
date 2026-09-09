@@ -19,6 +19,7 @@ class BotVisibility(str, Enum):
 
 class GameSource(str, Enum):
     CHESSCOM = "chesscom"
+    LICHESS = "lichess"
     BOT = "bot"
     PGN = "pgn"
 

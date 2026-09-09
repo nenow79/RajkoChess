@@ -48,6 +48,11 @@ OPERATIONAL_LIMITS = {
         "premium": (30, 300),
         "admin": (60, 300),
     },
+    "lichess_import": {
+        "free": (12, 300),
+        "premium": (30, 300),
+        "admin": (60, 300),
+    },
 }
 
 

@@ -17,6 +17,7 @@ class HistoryServiceTests(unittest.IsolatedAsyncioTestCase):
     def test_source_and_played_at_are_normalized(self):
         self.assertEqual(parse_game_source({"id": "abc"}), GameSource.CHESSCOM)
         self.assertEqual(parse_game_source({"source": "bot"}), GameSource.BOT)
+        self.assertEqual(parse_game_source({"source": "lichess"}), GameSource.LICHESS)
         self.assertEqual(parse_game_source({"source": "unknown"}), GameSource.PGN)
         self.assertIsNone(parse_played_at("not-a-date"))
 
@@ -76,6 +77,25 @@ class HistoryServiceTests(unittest.IsolatedAsyncioTestCase):
         db.scalar.assert_not_awaited()
         db.add.assert_called_once_with(result)
         db.flush.assert_awaited_once()
+
+    async def test_lichess_import_uses_external_id_for_deduplication(self):
+        owner_id = uuid.uuid4()
+        db = SimpleNamespace(
+            scalar=AsyncMock(return_value=None),
+            add=Mock(),
+            flush=AsyncMock(),
+        )
+
+        result = await persist_imported_game(
+            db,  # type: ignore[arg-type]
+            user=SimpleNamespace(id=owner_id),  # type: ignore[arg-type]
+            pgn="1. e4 e5",
+            metadata={"source": "lichess", "id": "AbCd1234"},
+        )
+
+        self.assertEqual(result.source, GameSource.LICHESS)
+        self.assertEqual(result.external_id, "AbCd1234")
+        db.scalar.assert_awaited_once()
 
     async def test_history_can_be_filtered_to_bot_games_in_database_query(self):
         owner_id = uuid.uuid4()

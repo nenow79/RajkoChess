@@ -10,7 +10,9 @@ interface AccountSettingsProps {
 export default function AccountSettings({ onClose }: AccountSettingsProps) {
   const { platformAccounts, refreshPlatformAccounts } = useAuth();
   const savedChessCom = platformAccounts.find((account) => account.provider === "chesscom")?.username || "";
+  const savedLichess = platformAccounts.find((account) => account.provider === "lichess")?.username || "";
   const [chessComUsername, setChessComUsername] = useState(savedChessCom);
+  const [lichessUsername, setLichessUsername] = useState(savedLichess);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -49,13 +51,13 @@ export default function AccountSettings({ onClose }: AccountSettingsProps) {
     setSuccess("");
     try {
       const normalized = chessComUsername.trim();
-      if (normalized) {
-        await savePlatformAccount("chesscom", normalized);
-      } else {
-        await deletePlatformAccount("chesscom");
-      }
+      const normalizedLichess = lichessUsername.trim();
+      await Promise.all([
+        normalized ? savePlatformAccount("chesscom", normalized) : deletePlatformAccount("chesscom"),
+        normalizedLichess ? savePlatformAccount("lichess", normalizedLichess) : deletePlatformAccount("lichess"),
+      ]);
       await refreshPlatformAccounts();
-      setSuccess(normalized ? "Zapisano domyślny login Chess.com." : "Usunięto domyślny login Chess.com.");
+      setSuccess("Zapisano domyślne loginy platform szachowych.");
     } catch (requestError) {
       setError(getAuthErrorMessage(requestError, "Nie udało się zapisać ustawień konta."));
     } finally {
@@ -98,6 +100,20 @@ export default function AccountSettings({ onClose }: AccountSettingsProps) {
               disabled={busy}
             />
             <small>Możesz go nadal jednorazowo zmienić w oknie importu Chess.com.</small>
+          </label>
+          <label>
+            Login Lichess
+            <input
+              type="text"
+              value={lichessUsername}
+              onChange={(event) => setLichessUsername(event.target.value.slice(0, 50))}
+              maxLength={50}
+              pattern="[A-Za-z0-9_-]+"
+              placeholder="np. moj_login"
+              autoComplete="off"
+              disabled={busy}
+            />
+            <small>Publiczny login używany domyślnie podczas importu z Lichess.</small>
           </label>
           {error && <p className="account-settings-error" role="alert">{error}</p>}
           {success && <p className="account-settings-success" role="status">{success}</p>}

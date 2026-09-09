@@ -20,6 +20,14 @@ class PlatformAccountTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "Nieobsługiwana"):
             normalize_platform_username("unknown", "player")
 
+    def test_lichess_username_is_supported(self):
+        self.assertEqual(
+            normalize_platform_username("lichess", " Lichess_User "),
+            ("Lichess_User", "lichess_user"),
+        )
+        with self.assertRaisesRegex(ValueError, "Login Lichess"):
+            normalize_platform_username("lichess", "bad login!")
+
     async def test_new_platform_username_is_owned_by_current_user(self):
         owner_id = uuid.uuid4()
         db = SimpleNamespace(

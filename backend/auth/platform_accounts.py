@@ -6,8 +6,8 @@ from db.models import ChessPlatformAccount, User
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-SUPPORTED_PROVIDERS = {"chesscom"}
-CHESSCOM_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
+SUPPORTED_PROVIDERS = {"chesscom", "lichess"}
+PLATFORM_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
 
 
 def normalize_platform_username(provider: str, username: str) -> tuple[str, str]:
@@ -16,11 +16,10 @@ def normalize_platform_username(provider: str, username: str) -> tuple[str, str]
         raise ValueError("Nieobsługiwana platforma szachowa")
 
     cleaned_username = username.strip()
-    if normalized_provider == "chesscom" and not CHESSCOM_USERNAME_PATTERN.fullmatch(
-        cleaned_username
-    ):
+    if not PLATFORM_USERNAME_PATTERN.fullmatch(cleaned_username):
+        platform_label = "Chess.com" if normalized_provider == "chesscom" else "Lichess"
         raise ValueError(
-            "Login Chess.com może zawierać tylko litery, cyfry, _ i -"
+            f"Login {platform_label} może zawierać tylko litery, cyfry, _ i -"
         )
     return cleaned_username, cleaned_username.casefold()
 

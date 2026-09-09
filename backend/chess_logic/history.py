@@ -36,7 +36,11 @@ async def persist_imported_game(
     metadata: dict[str, Any],
 ) -> Game:
     source = parse_game_source(metadata)
-    raw_external_id = metadata.get("id") if source == GameSource.CHESSCOM else None
+    raw_external_id = (
+        metadata.get("id")
+        if source in {GameSource.CHESSCOM, GameSource.LICHESS}
+        else None
+    )
     external_id = str(raw_external_id)[:128] if raw_external_id else None
     model = None
     if external_id:

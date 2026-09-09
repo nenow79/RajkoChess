@@ -31,6 +31,7 @@ const usageLabels: Record<string, string> = {
 
 const sourceLabels: Record<string, string> = {
   chesscom: "Chess.com",
+  lichess: "Lichess",
   bot: "Bot",
   pgn: "PGN",
 };
