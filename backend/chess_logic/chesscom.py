@@ -73,6 +73,7 @@ def _summarize_game(game: dict, username: str) -> dict:
         "time_control": game.get("time_control"),
         "rated": game.get("rated", False),
         "color": "white" if player_is_white else "black",
+        "player": player.get("username"),
         "result": player.get("result"),
         "rating": player.get("rating"),
         "opponent": opponent.get("username"),

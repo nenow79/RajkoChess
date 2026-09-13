@@ -29,6 +29,7 @@ export interface OnlineGame {
   pgn: string;
   color: PlayerColor;
   opponent: string;
+  player?: string;
   result: string;
   time_class: string;
   rating: number;
@@ -49,6 +50,9 @@ export interface ImportedGame {
   id?: string;
   storedGameId?: string;
   color?: PlayerColor;
+  player?: string;
+  white?: string;
+  black?: string;
   opponent?: string;
   result?: string | null;
   bot?: BotProfile;

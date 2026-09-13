@@ -6,22 +6,33 @@ export type GameReviewFocus = PlayerColor | "both";
 
 interface GameReviewPerspectiveDialogProps {
   defaultFocus?: PlayerColor;
+  whitePlayerName?: string;
+  blackPlayerName?: string;
   onClose: () => void;
   onConfirm: (focus: GameReviewFocus) => void;
 }
 
-const OPTIONS: Array<{ value: GameReviewFocus; title: string; description: string }> = [
-  { value: "white", title: "Białych", description: "Błędy i dobre decyzje białych." },
-  { value: "black", title: "Czarnych", description: "Błędy i dobre decyzje czarnych." },
-  { value: "both", title: "Obu stron", description: "Neutralny opis najważniejszych zwrotów." },
-];
-
 export default function GameReviewPerspectiveDialog({
   defaultFocus,
+  whitePlayerName,
+  blackPlayerName,
   onClose,
   onConfirm,
 }: GameReviewPerspectiveDialogProps) {
   const [focus, setFocus] = useState<GameReviewFocus | null>(defaultFocus ?? null);
+  const options: Array<{ value: GameReviewFocus; title: string; description: string }> = [
+    {
+      value: "white",
+      title: `Białych${whitePlayerName ? ` (${whitePlayerName})` : ""}`,
+      description: "Błędy i dobre decyzje białych.",
+    },
+    {
+      value: "black",
+      title: `Czarnych${blackPlayerName ? ` (${blackPlayerName})` : ""}`,
+      description: "Błędy i dobre decyzje czarnych.",
+    },
+    { value: "both", title: "Obu stron", description: "Neutralny opis najważniejszych zwrotów." },
+  ];
 
   return (
     <div className="game-review-focus-overlay" onMouseDown={onClose}>
@@ -42,7 +53,7 @@ export default function GameReviewPerspectiveDialog({
         </header>
         <fieldset>
           <legend>Perspektywa analizy</legend>
-          {OPTIONS.map((option) => (
+          {options.map((option) => (
             <label key={option.value} className={focus === option.value ? "selected" : ""}>
               <input
                 type="radio"

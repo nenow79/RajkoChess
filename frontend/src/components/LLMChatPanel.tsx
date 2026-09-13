@@ -55,6 +55,10 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed, onChatChang
   const moveOptions = useMemo(() => buildChessMoveOptions(importedGame?.pgn), [importedGame?.pgn]);
   const [selectedPositionPly, setSelectedPositionPly] = useState<number | null>(null);
   const [isReviewFocusDialogOpen, setIsReviewFocusDialogOpen] = useState(false);
+  const whitePlayerName = importedGame?.white
+    || (importedGame?.color === "white" ? importedGame.player : importedGame?.opponent);
+  const blackPlayerName = importedGame?.black
+    || (importedGame?.color === "black" ? importedGame.player : importedGame?.opponent);
   const selectedPosition = moveOptions.find((move) => move.ply === selectedPositionPly);
   const markdownPlugins = useMemo(() => [
     remarkGfm,
@@ -366,6 +370,8 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed, onChatChang
       {isReviewFocusDialogOpen && importedGame && (
         <GameReviewPerspectiveDialog
           defaultFocus={importedGame.color}
+          whitePlayerName={whitePlayerName}
+          blackPlayerName={blackPlayerName}
           onClose={() => setIsReviewFocusDialogOpen(false)}
           onConfirm={(focus) => {
             setIsReviewFocusDialogOpen(false);
