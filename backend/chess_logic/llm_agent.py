@@ -323,14 +323,21 @@ PIECE_LABELS_PL = {
 }
 
 
-def _variation_text(variation: object) -> str:
+GAME_REVIEW_MIN_LOSS = 0.75
+GAME_REVIEW_VARIATION_PLIES = 4
+
+
+def _variation_text(variation: object, *, max_plies: int | None = None) -> str:
     if not isinstance(variation, dict):
         return ""
-    return " ".join(
+    labels = [
         item["move_label"]
         for item in variation.get("line", [])
         if isinstance(item, dict) and isinstance(item.get("move_label"), str)
-    )
+    ]
+    if max_plies is not None and len(labels) > max_plies:
+        return " ".join(labels[:max_plies]) + " …"
+    return " ".join(labels)
 
 
 def _fallback_coach_payload() -> dict[str, Any]:
@@ -428,6 +435,22 @@ def _salvage_coach_payload(
     }
 
 
+def _visible_game_review_moments(critical_moments: list[dict]) -> list[dict]:
+    """Exclude engine noise while retaining at least one scored mistake."""
+    scored = [
+        moment
+        for moment in critical_moments
+        if isinstance(moment.get("loss"), (int, float))
+    ]
+    unscored = [moment for moment in critical_moments if moment not in scored]
+    meaningful = [
+        moment for moment in scored if moment["loss"] >= GAME_REVIEW_MIN_LOSS
+    ]
+    if not meaningful and scored:
+        meaningful = [max(scored, key=lambda moment: moment["loss"])]
+    return meaningful + unscored
+
+
 def _render_grounded_game_review(
     payload: dict[str, Any], *, critical_moments: list[dict], focus_color: str | None
 ) -> str:
@@ -443,10 +466,11 @@ def _render_grounded_game_review(
     ]
     explanations = {item["ply"]: item for item in payload.get("moments", [])}
 
+    visible_moments = _visible_game_review_moments(critical_moments)
     # Candidates are selected by evaluation loss, but a review is read as a
-    # story of the game.  Render the selected moments in board chronology.
+    # story of the game. Render the meaningful moments in board chronology.
     for moment in sorted(
-        critical_moments,
+        visible_moments,
         key=lambda item: item.get("ply") if isinstance(item.get("ply"), int) else float("inf"),
     ):
         lines = [f"- **{moment['move_label']}**"]
@@ -490,7 +514,9 @@ def _render_grounded_game_review(
                 lines.append("  - Figura po ruchu bezpośrednio atakuje: " + ", ".join(labels) + ".")
 
         punishment = moment.get("punishment")
-        punishment_text = _variation_text(punishment)
+        punishment_text = _variation_text(
+            punishment, max_plies=GAME_REVIEW_VARIATION_PLIES
+        )
         if punishment_text and isinstance(punishment, dict):
             lines.append(f"  - Odpowiedź silnika po błędzie: {punishment_text}.")
             material_change = punishment.get("material_change_for_mover")
@@ -500,7 +526,9 @@ def _render_grounded_game_review(
                     f"{material_change:+d}."
                 )
 
-        alternative_text = _variation_text(moment.get("better_alternative"))
+        alternative_text = _variation_text(
+            moment.get("better_alternative"), max_plies=GAME_REVIEW_VARIATION_PLIES
+        )
         if alternative_text:
             lines.append(f"  - Lepsza alternatywa Stockfisha: {alternative_text}.")
 
@@ -1226,6 +1254,14 @@ async def generate_game_analysis(
     dopisuj innych ataków, bić ani wariantów. Jeśli dowód nie wystarcza do
     ustalenia mechanizmu, napisz wprost, że silnik pokazuje pogorszenie bez
     przesądzania przyczyny.
+
+    Komentarz do momentu ma wyjaśniać decyzję i priorytet praktyczny, a nie
+    opowiadać rzekomy wariant taktyczny. Nie stwierdzaj, że silnik „pokazuje”
+    konkretny szach, bicie, poświęcenie, widełki ani wymuszoną sekwencję, chyba
+    że ten dokładny fakt występuje w better_alternative, punishment lub
+    played_move_facts. Gdy formułujesz szerszy wniosek strategiczny, używaj
+    ostrożnego języka: „warto było”, „pozycja wymagała”, „praktycznym
+    priorytetem było”.
 
     Zwróć wyłącznie obiekt JSON, bez Markdown i bez bloku kodu, w formacie:
     {{

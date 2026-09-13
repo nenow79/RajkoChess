@@ -166,6 +166,45 @@ class EngineGroundingTests(unittest.TestCase):
 
         self.assertLess(review.index("**8. c4**"), review.index("**17... Na4**"))
 
+    def test_game_review_hides_engine_noise_and_shortens_variations(self):
+        review = _render_grounded_game_review(
+            {
+                "overview": "Krótka analiza.",
+                "moments": [],
+                "root_causes": [],
+                "training_recommendations": ["Ćwicz kalkulację."],
+            },
+            critical_moments=[
+                {
+                    "ply": 10,
+                    "move_label": "5... a6",
+                    "loss": 0.14,
+                    "punishment": {"line": []},
+                },
+                {
+                    "ply": 20,
+                    "move_label": "10... Nc6",
+                    "loss": 1.25,
+                    "punishment": {
+                        "line": [
+                            {"move_label": "11. d4"},
+                            {"move_label": "11... e6"},
+                            {"move_label": "12. Nf3"},
+                            {"move_label": "12... Be7"},
+                            {"move_label": "13. c4"},
+                        ]
+                    },
+                    "better_alternative": {"line": []},
+                },
+            ],
+            focus_color="black",
+        )
+
+        self.assertNotIn("**5... a6**", review)
+        self.assertIn("**10... Nc6**", review)
+        self.assertIn("11. d4 11... e6 12. Nf3 12... Be7 …", review)
+        self.assertNotIn("13. c4", review)
+
     def test_position_report_uses_only_engine_move_and_attack_facts(self):
         board = chess.Board()
         move = board.parse_san("Nf3")
