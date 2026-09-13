@@ -7,6 +7,7 @@ import type { GameAnalysis, GameNavigation, ImportedGame, StoredChatMessage } fr
 import { getAuthErrorMessage } from "../auth/api";
 import { getMyPlan } from "../admin/api";
 import { buildChessMoveOptions, remarkChessMoveLinks } from "../chessMoveReferences";
+import GameReviewPerspectiveDialog, { type GameReviewFocus } from "./GameReviewPerspectiveDialog";
 
 interface ChatMessage {
   role: "bot" | "user";
@@ -33,14 +34,13 @@ const formatRemainingQuota = (quota: RemainingQuota) => quota.limit === null
 
 interface LLMChatPanelProps {
   importedGame: ImportedGame | null;
-  playerUsername: string;
   onGameAnalyzed: (analysis: GameAnalysis) => void;
   onChatChanged: (hasAnalysis: boolean) => void;
   navigation: GameNavigation | null;
   onNavigate: (ply: number) => void;
 }
 
-export default function LLMChatPanel({ importedGame, playerUsername, onGameAnalyzed, onChatChanged, navigation, onNavigate }: LLMChatPanelProps) {
+export default function LLMChatPanel({ importedGame, onGameAnalyzed, onChatChanged, navigation, onNavigate }: LLMChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -54,6 +54,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
   const activeGameId = importedGame?.storedGameId;
   const moveOptions = useMemo(() => buildChessMoveOptions(importedGame?.pgn), [importedGame?.pgn]);
   const [selectedPositionPly, setSelectedPositionPly] = useState<number | null>(null);
+  const [isReviewFocusDialogOpen, setIsReviewFocusDialogOpen] = useState(false);
   const selectedPosition = moveOptions.find((move) => move.ply === selectedPositionPly);
   const markdownPlugins = useMemo(() => [
     remarkGfm,
@@ -182,14 +183,14 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
     }
   };
 
-  const handleAnalyzeGame = async () => {
+  const handleAnalyzeGame = async (focusColor: GameReviewFocus) => {
     if (!importedGame || isLoading) return;
 
-    const isOnlineGame = importedGame.source === "chesscom" || importedGame.source === "lichess";
     const gameLabel = importedGame.source === "pgn"
       ? `zaimportowaną partię${importedGame.opponent ? ` ${importedGame.opponent}` : ""}`
       : `partię przeciwko ${importedGame.opponent || "przeciwnikowi"}`;
-    const reviewPrompt = `Przeanalizuj całą ${gameLabel}${isOnlineGame && playerUsername ? ` z perspektywy gracza ${playerUsername}` : ""}.`;
+    const focusLabel = focusColor === "white" ? "białych" : focusColor === "black" ? "czarnych" : "obu stron";
+    const reviewPrompt = `Przeanalizuj całą ${gameLabel} z perspektywy ${focusLabel}.`;
     setMessages(prev => [...prev, {
       role: "user",
       text: reviewPrompt,
@@ -202,6 +203,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
     try {
       const res = await axios.post<{ response: string; engine_analysis: GameAnalysis }>(`${API_URL}/analyze-game`, {
         message: reviewPrompt,
+        focus_color: focusColor,
       }, {
         signal: controller.signal,
       });
@@ -333,7 +335,7 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
           <button
             type="button"
             className="game-analysis-btn"
-            onClick={handleAnalyzeGame}
+            onClick={() => setIsReviewFocusDialogOpen(true)}
             disabled={!importedGame || isLoading}
             title={importedGame ? "Analizuj zaimportowaną partię" : "Najpierw wybierz partię Chess.com"}
           >
@@ -360,6 +362,17 @@ export default function LLMChatPanel({ importedGame, playerUsername, onGameAnaly
           </button>
         </div>
       </div>
+
+      {isReviewFocusDialogOpen && importedGame && (
+        <GameReviewPerspectiveDialog
+          defaultFocus={importedGame.color}
+          onClose={() => setIsReviewFocusDialogOpen(false)}
+          onConfirm={(focus) => {
+            setIsReviewFocusDialogOpen(false);
+            void handleAnalyzeGame(focus);
+          }}
+        />
+      )}
 
       <div className="chat-container">
         <div className="chat-messages">

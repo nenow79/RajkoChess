@@ -541,11 +541,6 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
         <div className="chat-col">
           <LLMChatPanel
             importedGame={importedGame}
-            playerUsername={typeof importedGame?.player === "string"
-              ? importedGame.player
-              : importedGame?.source === "lichess"
-                ? lichessUsername
-                : chessComUsername}
             onGameAnalyzed={(analysis) => {
               gameAnalysisRequestRef.current += 1;
               setGameAnalysis(analysis);

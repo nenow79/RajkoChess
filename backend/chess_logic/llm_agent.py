@@ -1263,7 +1263,10 @@ async def generate_game_analysis(
         phase_summaries = []
     coach_moments = critical_moments + positive_moments
     focus_color = engine_analysis.get("focus_color")
-    if focus_color not in {"white", "black"}:
+    if (
+        focus_color not in {"white", "black"}
+        and engine_analysis.get("focus_scope") != "both"
+    ):
         metadata_color = safe_metadata.get("color")
         focus_color = (
             metadata_color

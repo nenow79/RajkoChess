@@ -2,6 +2,7 @@
 import asyncio
 import json
 import uuid
+from typing import Literal
 
 import httpx
 from admin.router import router as admin_router
@@ -108,6 +109,10 @@ app.include_router(support_admin_router)
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     position_ply: int | None = Field(default=None, ge=0, le=600)
+
+
+class GameReviewRequest(ChatRequest):
+    focus_color: Literal["white", "black", "both"] | None = None
 
 
 class ImportGameRequest(BaseModel):
@@ -804,7 +809,7 @@ async def imported_game_position(
 
 @app.post("/api/analyze-game")
 async def analyze_imported_game(
-    request: ChatRequest,
+    request: GameReviewRequest,
     time_limit: float = 0.15,
     session_id: str = Depends(get_session_id),
     game: ChessGame = Depends(get_game),
@@ -817,6 +822,19 @@ async def analyze_imported_game(
     if not imported_game:
         raise HTTPException(
             status_code=400, detail="Najpierw zaimportuj zakończoną partię"
+        )
+
+    inferred_color = imported_game["metadata"].get("color")
+    if request.focus_color == "both":
+        focus_color = None
+    elif request.focus_color in {"white", "black"}:
+        focus_color = request.focus_color
+    elif inferred_color in {"white", "black"}:
+        focus_color = inferred_color
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="Wybierz perspektywę analizy: białe, czarne albo obie strony.",
         )
 
     selected_model = get_default_model()
@@ -839,8 +857,12 @@ async def analyze_imported_game(
             engine_data = await analyze_game(
                 imported_game["pgn"],
                 time_limit=min(max(time_limit, 0.05), 1.0),
-                focus_color=imported_game["metadata"].get("color"),
+                focus_color=focus_color,
             )
+            if request.focus_color == "both":
+                # Preserve an explicit neutral choice instead of falling back
+                # to the account colour inside the coach prompt.
+                engine_data["focus_scope"] = "both"
             llm_result = await generate_game_analysis(
                 pgn=imported_game["pgn"],
                 engine_analysis=engine_data,
