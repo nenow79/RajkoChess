@@ -1,6 +1,7 @@
 import os
 import re
 from io import StringIO
+from statistics import median
 
 import chess
 import chess.engine
@@ -23,6 +24,14 @@ PIECE_VALUES = {
     chess.QUEEN: 9,
     chess.KING: 0,
 }
+
+GAME_PHASE_LABELS = {
+    "opening": "debiut",
+    "middlegame": "gra środkowa",
+    "endgame": "końcówka",
+}
+SIGNIFICANT_GAME_LOSS = 0.75
+GOOD_DECISION_MARGIN = 0.5
 
 POLISH_SAN_PIECES = {"Q": "H", "R": "W", "B": "G", "N": "S"}
 
@@ -247,12 +256,16 @@ async def analyze_game(
     moments = []
 
     try:
-        before_info = await engine.analyse(board, chess.engine.Limit(time=time_limit))
+        before_infos = await engine.analyse(
+            board, chess.engine.Limit(time=time_limit), multipv=2
+        )
+        before_info = before_infos[0]
         before_score = _score_for_white(before_info)
 
         for ply, move in enumerate(parsed_game.mainline_moves(), start=1):
             mover = "white" if board.turn == chess.WHITE else "black"
             fen_before = board.fen()
+            phase = _game_phase(board)
             played_san = board.san(move)
             move_number = (ply + 1) // 2
             move_label = (
@@ -263,11 +276,16 @@ async def analyze_game(
             best_move = before_info.get("pv", [None])[0]
             best_move_san = board.san(best_move) if best_move else None
             best_line_san = _line_to_san(board, before_info.get("pv", [])[:4])
+            second_info = before_infos[1] if len(before_infos) > 1 else None
+            choice_margin = _choice_margin_for_mover(
+                before_info, second_info, mover
+            )
 
             board.push(move)
-            after_info = await engine.analyse(
-                board, chess.engine.Limit(time=time_limit)
+            after_infos = await engine.analyse(
+                board, chess.engine.Limit(time=time_limit), multipv=2
             )
+            after_info = after_infos[0]
             after_score = _score_for_white(after_info)
             loss = (
                 before_score - after_score
@@ -281,9 +299,13 @@ async def analyze_game(
                     "move_number": move_number,
                     "move_label": move_label,
                     "color": mover,
+                    "phase": phase,
                     "played": played_san,
+                    "played_uci": move.uci(),
                     "best_move": best_move_san,
+                    "best_move_uci": best_move.uci() if best_move else None,
                     "best_line": best_line_san,
+                    "choice_margin": round(choice_margin, 2),
                     "better_alternative": {
                         "move": best_move_san,
                         **_variation_evidence(
@@ -304,6 +326,7 @@ async def analyze_game(
                     "fen_after": board.fen(),
                 }
             )
+            before_infos = after_infos
             before_info = after_info
             before_score = after_score
 
@@ -359,6 +382,69 @@ async def analyze_game(
             moment["punishment"]["depth"] = after_deep.get("depth", 0)
 
         critical.sort(key=lambda item: item["loss"], reverse=True)
+        positive_moments = []
+        critical_plies = {moment["ply"] for moment in critical}
+        positive_candidates = sorted(
+            (
+                moment
+                for moment in moments
+                if moment["ply"] not in critical_plies
+                and (
+                    normalized_focus is None
+                    or moment["color"] == normalized_focus
+                )
+                and moment["played_uci"] == moment["best_move_uci"]
+                and moment["choice_margin"] >= GOOD_DECISION_MARGIN
+                and moment["loss"] < SIGNIFICANT_GAME_LOSS
+            ),
+            key=lambda item: item["choice_margin"],
+            reverse=True,
+        )
+        # Prefer a representative good decision from each phase, then fill up
+        # to three only when there are more independently meaningful choices.
+        selected_positive = []
+        selected_phases = set()
+        for candidate in positive_candidates:
+            if candidate["phase"] not in selected_phases:
+                selected_positive.append(candidate)
+                selected_phases.add(candidate["phase"])
+        for candidate in positive_candidates:
+            if len(selected_positive) >= 3:
+                break
+            if candidate not in selected_positive:
+                selected_positive.append(candidate)
+
+        for moment in selected_positive[:3]:
+            before_board = chess.Board(moment["fen_before"])
+            choice_infos = await engine.analyse(
+                before_board, chess.engine.Limit(time=second_pass_time), multipv=2
+            )
+            best_info = choice_infos[0]
+            best_pv = best_info.get("pv", [])
+            second_info = choice_infos[1] if len(choice_infos) > 1 else None
+            deep_margin = _choice_margin_for_mover(
+                best_info, second_info, moment["color"]
+            )
+            if (
+                not best_pv
+                or best_pv[0].uci() != moment["played_uci"]
+                or deep_margin < GOOD_DECISION_MARGIN
+            ):
+                continue
+            positive_moments.append(
+                {
+                    "ply": moment["ply"],
+                    "move_label": moment["move_label"],
+                    "color": moment["color"],
+                    "phase": moment["phase"],
+                    "evaluation": round(_score_for_white(best_info), 2),
+                    "choice_margin": round(deep_margin, 2),
+                    "confirmation": _variation_evidence(
+                        before_board, best_pv[:6], perspective=moment["color"]
+                    ),
+                    "depth": best_info.get("depth", 0),
+                }
+            )
 
     finally:
         await engine.quit()
@@ -392,6 +478,8 @@ async def analyze_game(
         "move_count": len(moments),
         "final_fen": board.fen(),
         "critical_moments": critical,
+        "positive_moments": positive_moments,
+        "phase_summaries": _phase_summaries(moments),
         "focus_color": normalized_focus,
         "evaluation_series": evaluation_series,
     }
@@ -405,6 +493,80 @@ def _score_for_white(info: chess.engine.InfoDict) -> float:
     if centipawns is None:
         raise ValueError("Stockfish zwrócił pustą ocenę pozycji")
     return centipawns / 100.0
+
+
+def _choice_margin_for_mover(
+    best_info: chess.engine.InfoDict,
+    second_info: chess.engine.InfoDict | None,
+    mover: str,
+) -> float:
+    """How much the best engine choice beats the runner-up for its player."""
+    if second_info is None:
+        return 0.0
+    best_score = _score_for_white(best_info)
+    second_score = _score_for_white(second_info)
+    return (
+        best_score - second_score
+        if mover == "white"
+        else second_score - best_score
+    )
+
+
+def _game_phase(board: chess.Board) -> str:
+    """Use conservative, position-based labels for a player-facing review."""
+    if board.fullmove_number <= 10:
+        return "opening"
+    non_pawn_material = sum(
+        PIECE_VALUES[piece.piece_type]
+        for piece in board.piece_map().values()
+        if piece.piece_type not in {chess.PAWN, chess.KING}
+    )
+    queens_present = any(
+        piece.piece_type == chess.QUEEN for piece in board.piece_map().values()
+    )
+    if not queens_present and non_pawn_material <= 26:
+        return "endgame"
+    return "middlegame"
+
+
+def _phase_summaries(moments: list[dict]) -> list[dict]:
+    """Aggregate stable phase facts for the coach's game-level narrative."""
+    summaries = []
+    for phase in ("opening", "middlegame", "endgame"):
+        phase_moments = [moment for moment in moments if moment["phase"] == phase]
+        if not phase_moments:
+            continue
+        evaluations = [phase_moments[0]["evaluation_before"]] + [
+            moment["evaluation_after"] for moment in phase_moments
+        ]
+        largest_change = max(
+            phase_moments,
+            key=lambda moment: abs(
+                moment["evaluation_after"] - moment["evaluation_before"]
+            ),
+        )
+        summaries.append(
+            {
+                "phase": phase,
+                "label": GAME_PHASE_LABELS[phase],
+                "first_move": phase_moments[0]["move_label"],
+                "last_move": phase_moments[-1]["move_label"],
+                "evaluation_start": round(evaluations[0], 2),
+                "evaluation_end": round(evaluations[-1], 2),
+                "evaluation_median": round(float(median(evaluations)), 2),
+                "largest_change": {
+                    "move_label": largest_change["move_label"],
+                    "evaluation_before": largest_change["evaluation_before"],
+                    "evaluation_after": largest_change["evaluation_after"],
+                    "loss": largest_change["loss"],
+                },
+                "significant_moment_count": sum(
+                    moment["loss"] >= SIGNIFICANT_GAME_LOSS
+                    for moment in phase_moments
+                ),
+            }
+        )
+    return summaries
 
 
 def _line_to_san(board: chess.Board, moves: list[chess.Move]) -> list[str]:

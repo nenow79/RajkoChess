@@ -6,6 +6,8 @@ import chess
 import chess.engine
 
 from chess_logic.engine import (
+    _game_phase,
+    _phase_summaries,
     _played_move_facts,
     _variation_evidence,
     analyze_position,
@@ -164,7 +166,10 @@ class EngineGroundingTests(unittest.TestCase):
             focus_color="black",
         )
 
-        self.assertLess(review.index("**8. c4**"), review.index("**17... Na4**"))
+        self.assertLess(
+            review.index("Punkt krytyczny · 8. c4"),
+            review.index("Punkt krytyczny · 17... Na4"),
+        )
 
     def test_game_review_hides_engine_noise_and_shortens_variations(self):
         review = _render_grounded_game_review(
@@ -201,9 +206,81 @@ class EngineGroundingTests(unittest.TestCase):
         )
 
         self.assertNotIn("**5... a6**", review)
-        self.assertIn("**10... Nc6**", review)
+        self.assertIn("**Punkt krytyczny · 10... Nc6**", review)
         self.assertIn("11. d4 11... e6 12. Nf3 12... Be7 …", review)
         self.assertNotIn("13. c4", review)
+
+    def test_phase_summary_uses_median_and_preserves_turning_point(self):
+        summaries = _phase_summaries(
+            [
+                {
+                    "phase": "opening",
+                    "move_label": "1. e4",
+                    "evaluation_before": 0.0,
+                    "evaluation_after": 0.2,
+                    "loss": 0.0,
+                },
+                {
+                    "phase": "opening",
+                    "move_label": "2... d5",
+                    "evaluation_before": 0.2,
+                    "evaluation_after": 1.4,
+                    "loss": 1.2,
+                },
+            ]
+        )
+
+        self.assertEqual(len(summaries), 1)
+        self.assertEqual(summaries[0]["label"], "debiut")
+        self.assertEqual(summaries[0]["evaluation_start"], 0.0)
+        self.assertEqual(summaries[0]["evaluation_end"], 1.4)
+        self.assertEqual(summaries[0]["evaluation_median"], 0.2)
+        self.assertEqual(summaries[0]["largest_change"]["move_label"], "2... d5")
+        self.assertEqual(summaries[0]["significant_moment_count"], 1)
+
+    def test_endgame_phase_requires_queens_to_be_gone_and_low_material(self):
+        opening = chess.Board()
+        queenless_endgame = chess.Board("8/8/8/8/8/8/4K3/4k3 w - - 0 20")
+
+        self.assertEqual(_game_phase(opening), "opening")
+        self.assertEqual(_game_phase(queenless_endgame), "endgame")
+
+    def test_game_review_renders_verified_good_decision_in_timeline(self):
+        review = _render_grounded_game_review(
+            {
+                "overview": "Krótka analiza.",
+                "moments": [
+                    {
+                        "ply": 12,
+                        "explanation": "Ruch utrzymuje inicjatywę.",
+                        "better_plan": "Kontynuuj rozwój figur.",
+                    }
+                ],
+                "root_causes": [],
+                "training_recommendations": ["Ćwicz kalkulację."],
+            },
+            critical_moments=[],
+            positive_moments=[
+                {
+                    "ply": 12,
+                    "move_label": "6... Nc6",
+                    "evaluation": -0.8,
+                    "choice_margin": 0.7,
+                    "confirmation": {
+                        "line": [
+                            {"move_label": "6... Nc6"},
+                            {"move_label": "7. Nf3"},
+                        ]
+                    },
+                }
+            ],
+            focus_color="black",
+        )
+
+        self.assertIn("**Dobra decyzja · 6... Nc6**", review)
+        self.assertIn("kolejny kandydat wypada gorzej o 0.70 piona", review)
+        self.assertIn("**Komentarz trenera:** Ruch utrzymuje inicjatywę.", review)
+        self.assertIn("6... Nc6 7. Nf3", review)
 
     def test_position_report_uses_only_engine_move_and_attack_facts(self):
         board = chess.Board()
