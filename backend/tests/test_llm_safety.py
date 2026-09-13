@@ -6,6 +6,7 @@ from chess_logic.llm_agent import (
     OUT_OF_SCOPE_MESSAGE,
     _validated_coach_payload,
     _validated_position_payload,
+    _salvage_coach_payload,
     generate_bot_game_greeting,
     generate_chess_analysis,
     generate_game_analysis,
@@ -209,6 +210,32 @@ class PromptSanitizationTests(unittest.TestCase):
         )
 
         self.assertIsNone(payload)
+
+    def test_review_salvage_keeps_safe_coaching_when_one_field_is_invalid(self):
+        raw = """{
+          "overview": "Partia wymknęła się spod kontroli po przeoczeniu odpowiedzi.",
+          "moments": [
+            {"ply": 34, "explanation": "Pozycja straciła stabilność.", "better_plan": "Zatrzymaj się i sprawdź odpowiedź przeciwnika."},
+            {"ply": 35, "explanation": "Po 18. Qh5 jest wygrana.", "better_plan": "Atakuj."}
+          ],
+          "root_causes": ["Za szybko wybierasz pierwszy ruch kandydujący."],
+          "training_recommendations": ["Poświęć chwilę na porównanie dwóch kandydatów."]
+        }"""
+
+        payload = _salvage_coach_payload(
+            raw,
+            critical_moments=[
+                {"ply": 34, "move_label": "17... Na4"},
+                {"ply": 35, "move_label": "18. Qxa4"},
+            ],
+            allowed_move_labels={"17... Na4", "18. Qxa4"},
+        )
+
+        assert payload is not None
+        self.assertEqual(payload["overview"], "Partia wymknęła się spod kontroli po przeoczeniu odpowiedzi.")
+        self.assertEqual([item["ply"] for item in payload["moments"]], [34])
+        self.assertEqual(payload["root_causes"], ["Za szybko wybierasz pierwszy ruch kandydujący."])
+        self.assertEqual(len(payload["training_recommendations"]), 3)
 
 
 class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):

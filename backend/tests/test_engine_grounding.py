@@ -149,6 +149,23 @@ class EngineGroundingTests(unittest.TestCase):
         self.assertIn("18. Qxa4 18... Rxc3 19. bxc3", review)
         self.assertNotIn("hetman d1", review)
 
+    def test_grounded_report_orders_selected_moments_by_game_time(self):
+        review = _render_grounded_game_review(
+            {
+                "overview": "Krótka analiza.",
+                "moments": [],
+                "root_causes": [],
+                "training_recommendations": ["Ćwicz kalkulację."],
+            },
+            critical_moments=[
+                {"ply": 34, "move_label": "17... Na4"},
+                {"ply": 15, "move_label": "8. c4"},
+            ],
+            focus_color="black",
+        )
+
+        self.assertLess(review.index("**8. c4**"), review.index("**17... Na4**"))
+
     def test_position_report_uses_only_engine_move_and_attack_facts(self):
         board = chess.Board()
         move = board.parse_san("Nf3")

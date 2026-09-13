@@ -349,6 +349,85 @@ def _fallback_coach_payload() -> dict[str, Any]:
     }
 
 
+def _salvage_coach_payload(
+    raw_text: str, *, critical_moments: list[dict], allowed_move_labels: set[str]
+) -> dict[str, Any] | None:
+    """Keep safe parts of a coach response instead of discarding it wholesale.
+
+    Models occasionally add a move outside the supplied engine lines, or omit a
+    non-essential JSON field.  That must not make an otherwise useful summary
+    and the training conclusions disappear behind the mechanical fallback.
+    """
+    candidate = raw_text.strip()
+    if candidate.startswith("```"):
+        candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", candidate)
+    try:
+        source = json.loads(candidate)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(source, dict):
+        return None
+
+    def safe_text(value: object, max_length: int) -> str | None:
+        if not isinstance(value, str):
+            return None
+        value = value.strip()[:max_length]
+        for match in NUMBERED_SAN_PATTERN.findall(value):
+            if _normalize_move_label(match) not in allowed_move_labels:
+                return None
+        without_numbered_moves = NUMBERED_SAN_PATTERN.sub("", value)
+        if UNNUMBERED_PIECE_SAN_PATTERN.search(without_numbered_moves):
+            return None
+        return value or None
+
+    fallback = _fallback_coach_payload()
+    overview = safe_text(source.get("overview"), 1600) or fallback["overview"]
+    allowed_plies = {
+        item.get("ply") for item in critical_moments if isinstance(item.get("ply"), int)
+    }
+    moments = []
+    seen_plies = set()
+    raw_moments = source.get("moments")
+    if isinstance(raw_moments, list):
+        for item in raw_moments:
+            if not isinstance(item, dict):
+                continue
+            ply = item.get("ply")
+            if not isinstance(ply, int) or ply not in allowed_plies or ply in seen_plies:
+                continue
+            explanation = safe_text(item.get("explanation"), 1200)
+            better_plan = safe_text(item.get("better_plan"), 800)
+            if explanation is None or better_plan is None:
+                continue
+            seen_plies.add(ply)
+            moments.append(
+                {"ply": ply, "explanation": explanation, "better_plan": better_plan}
+            )
+
+    def safe_list(name: str, maximum: int) -> list[str]:
+        values = source.get(name)
+        if not isinstance(values, list):
+            return []
+        result = []
+        for value in values[:maximum]:
+            text = safe_text(value, 600)
+            if text is not None:
+                result.append(text)
+        return result
+
+    recommendations = safe_list("training_recommendations", 3)
+    for recommendation in fallback["training_recommendations"]:
+        if len(recommendations) >= 3:
+            break
+        recommendations.append(recommendation)
+    return {
+        "overview": overview,
+        "moments": moments,
+        "root_causes": safe_list("root_causes", 3),
+        "training_recommendations": recommendations,
+    }
+
+
 def _render_grounded_game_review(
     payload: dict[str, Any], *, critical_moments: list[dict], focus_color: str | None
 ) -> str:
@@ -364,7 +443,12 @@ def _render_grounded_game_review(
     ]
     explanations = {item["ply"]: item for item in payload.get("moments", [])}
 
-    for moment in critical_moments:
+    # Candidates are selected by evaluation loss, but a review is read as a
+    # story of the game.  Render the selected moments in board chronology.
+    for moment in sorted(
+        critical_moments,
+        key=lambda item: item.get("ply") if isinstance(item.get("ply"), int) else float("inf"),
+    ):
         lines = [f"- **{moment['move_label']}**"]
         evaluation_before = moment.get("evaluation_before")
         evaluation_after = moment.get("evaluation_after")
@@ -379,6 +463,12 @@ def _render_grounded_game_review(
                 f"{evaluation_before:+.2f} → {evaluation_after:+.2f}; "
                 f"strata ruchu: {loss:.2f}."
             )
+        explanation = explanations.get(moment.get("ply"))
+        if explanation:
+            # Lead with the coach's interpretation; engine evidence below lets
+            # the reader verify it without turning the review into a data dump.
+            lines.append(f"  - **Komentarz trenera:** {explanation['explanation']}")
+            lines.append(f"  - **Lepszy plan:** {explanation['better_plan']}")
         facts = moment.get("played_move_facts") or {}
         attacks = facts.get("directly_attacks_after_move") or []
         if attacks:
@@ -414,10 +504,6 @@ def _render_grounded_game_review(
         if alternative_text:
             lines.append(f"  - Lepsza alternatywa Stockfisha: {alternative_text}.")
 
-        explanation = explanations.get(moment.get("ply"))
-        if explanation:
-            lines.append(f"  - Wyjaśnienie trenera: {explanation['explanation']}")
-            lines.append(f"  - Lepszy plan: {explanation['better_plan']}")
         sections.append("\n".join(lines))
 
     causes = payload.get("root_causes") or []
@@ -1209,8 +1295,15 @@ async def generate_game_analysis(
         )
         if payload is None:
             logger.warning(
-                "Odrzucono nieustrukturyzowaną lub nieugruntowaną analizę partii"
+                "Odpowiedź trenera nie przeszła pełnej walidacji; zachowuję bezpieczne fragmenty"
             )
+            payload = _salvage_coach_payload(
+                raw_result.text,
+                critical_moments=critical_moments,
+                allowed_move_labels=allowed_labels,
+            )
+        if payload is None:
+            logger.warning("Nie udało się odzyskać bezpiecznych fragmentów analizy")
             payload = _fallback_coach_payload()
         return LLMResult(
             text=_render_grounded_game_review(
