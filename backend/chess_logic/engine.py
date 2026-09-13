@@ -27,12 +27,12 @@ PIECE_VALUES = {
 POLISH_SAN_PIECES = {"Q": "H", "R": "W", "B": "G", "N": "S"}
 
 
-def find_legal_move_in_text(fen: str, text: str) -> str | None:
-    """Return one unambiguously mentioned legal move as UCI.
+def find_legal_moves_in_text(fen: str, text: str) -> list[str]:
+    """Return all legal moves explicitly mentioned in text as stable UCI values.
 
     Both standard SAN/UCI and the common Polish piece initials H/W/G/S are
-    accepted. When a question mentions multiple legal moves, no candidate is
-    selected automatically; the normal MultiPV analysis still applies.
+    accepted. Callers decide whether the number of mentioned moves warrants a
+    single-move, comparison or general-position analysis.
     """
     board = chess.Board(fen)
     found: set[str] = set()
@@ -74,7 +74,13 @@ def find_legal_move_in_text(fen: str, text: str) -> str | None:
             ):
                 found.add(move.uci())
                 break
-    return next(iter(found)) if len(found) == 1 else None
+    return sorted(found)
+
+
+def find_legal_move_in_text(fen: str, text: str) -> str | None:
+    """Return one unambiguously mentioned legal move as UCI, if exactly one."""
+    found = find_legal_moves_in_text(fen, text)
+    return found[0] if len(found) == 1 else None
 
 
 async def analyze_position(
@@ -82,6 +88,7 @@ async def analyze_position(
     time_limit: float = 0.5,
     multipv: int = 3,
     requested_move_uci: str | None = None,
+    requested_move_ucis: list[str] | None = None,
 ) -> dict:
     stockfish_path = os.getenv("STOCKFISH_PATH")
 
@@ -158,10 +165,13 @@ async def analyze_position(
                 }
             )
 
-        requested_move = None
-        if requested_move_uci:
+        requested_move_candidates = requested_move_ucis
+        if requested_move_candidates is None and requested_move_uci:
+            requested_move_candidates = [requested_move_uci]
+        requested_moves = []
+        for requested_uci in dict.fromkeys(requested_move_candidates or []):
             try:
-                move = chess.Move.from_uci(requested_move_uci)
+                move = chess.Move.from_uci(requested_uci)
             except ValueError:
                 move = None
             if move is not None and move in board.legal_moves and infos:
@@ -182,7 +192,7 @@ async def analyze_position(
                     if mover == "white"
                     else after_score - before_score
                 )
-                requested_move = {
+                requested_moves.append({
                     "move_label": move_label,
                     "san": san,
                     "uci": move.uci(),
@@ -201,13 +211,15 @@ async def analyze_position(
                         ),
                         "depth": candidate_info.get("depth", 0),
                     },
-                }
+                })
 
         return {
             "fen": fen,
             "side_to_move": "white" if board.turn == chess.WHITE else "black",
             "variations": variations,
-            "requested_move": requested_move,
+            # Kept temporarily for existing single-move consumers.
+            "requested_move": requested_moves[0] if len(requested_moves) == 1 else None,
+            "requested_moves": requested_moves,
         }
     finally:
         await engine.quit()

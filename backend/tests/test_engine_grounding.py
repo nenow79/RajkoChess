@@ -10,8 +10,10 @@ from chess_logic.engine import (
     _variation_evidence,
     analyze_position,
     find_legal_move_in_text,
+    find_legal_moves_in_text,
 )
 from chess_logic.llm_agent import (
+    _fallback_position_payload,
     _render_grounded_game_review,
     _render_grounded_position_analysis,
 )
@@ -33,6 +35,10 @@ class EngineGroundingTests(unittest.TestCase):
         )
         self.assertIsNone(
             find_legal_move_in_text(initial, "Porównaj e4 oraz d4.")
+        )
+        self.assertEqual(
+            find_legal_moves_in_text(initial, "Porównaj e4 oraz d4."),
+            ["d2d4", "e2e4"],
         )
         self.assertIsNone(
             find_legal_move_in_text(initial, "Czy e5 jest teraz legalne?")
@@ -190,7 +196,59 @@ class EngineGroundingTests(unittest.TestCase):
         self.assertIn("1. Nf3", report)
         self.assertIn("1... d5", report)
         self.assertIn("Głębokość analizy: pozycja 14, odpowiedź 13", report)
-        self.assertIn("**Na ruchu:** białe", report)
+        self.assertIn("Białe na ruchu · oceny z perspektywy białych.", report)
+
+    def test_comparison_report_keeps_white_score_perspective(self):
+        report = _render_grounded_position_analysis(
+            {
+                "summary": "Porównanie dotyczy dwóch kandydatów.",
+                "line_explanations": [],
+                "requested_move_explanation": None,
+                "comparison_explanation": (
+                    "{{move:candidate_1}} daje czarnym lepszą aktywność."
+                ),
+                "plans": [],
+                "practical_tip": None,
+            },
+            stockfish_data={
+                "side_to_move": "black",
+                "variations": [],
+                "requested_moves": [
+                    {
+                        "move_label": "5... Nc6",
+                        "color": "black",
+                        "evaluation_after": -2.66,
+                        "loss": 0.0,
+                        "response_depth": 18,
+                        "continuation": {"line": []},
+                    },
+                    {
+                        "move_label": "5... gxf3",
+                        "color": "black",
+                        "evaluation_after": -2.47,
+                        "loss": 0.19,
+                        "response_depth": 18,
+                        "continuation": {"line": []},
+                    },
+                ],
+            },
+            lichess_data={"top_moves": []},
+        )
+
+        self.assertIn("5... Nc6 wypada najlepiej", report)
+        self.assertIn("różnica 0.19 piona jest niewielka", report)
+        self.assertIn("5... Nc6 daje czarnym lepszą aktywność", report)
+
+    def test_position_fallback_does_not_pose_as_training_advice(self):
+        report = _render_grounded_position_analysis(
+            _fallback_position_payload(),
+            stockfish_data={"side_to_move": "white", "variations": []},
+            lichess_data={"top_moves": []},
+        )
+
+        self.assertIn("Nie udało się przygotować opisu trenerskiego", report)
+        self.assertNotIn("Możliwe idee", report)
+        self.assertNotIn("Wskazówka treningowa", report)
 
 
 class PositionEngineGroundingTests(unittest.IsolatedAsyncioTestCase):
@@ -247,7 +305,62 @@ class PositionEngineGroundingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             requested["continuation"]["line"][0]["move_label"], "1... d5"
         )
+        self.assertEqual(result["requested_moves"], [requested])
         engine.quit.assert_awaited_once()
+
+    async def test_multiple_requested_moves_get_separate_engine_evaluations(self):
+        board = chess.Board()
+        best = board.parse_san("e4")
+        candidate_one = board.parse_san("Nf3")
+        candidate_two = board.parse_san("d4")
+        engine = SimpleNamespace(
+            analyse=AsyncMock(
+                side_effect=[
+                    [
+                        {
+                            "score": chess.engine.PovScore(
+                                chess.engine.Cp(20), chess.WHITE
+                            ),
+                            "pv": [best],
+                            "depth": 14,
+                        }
+                    ],
+                    {
+                        "score": chess.engine.PovScore(
+                            chess.engine.Cp(5), chess.WHITE
+                        ),
+                        "pv": [candidate_one],
+                        "depth": 13,
+                    },
+                    {
+                        "score": chess.engine.PovScore(
+                            chess.engine.Cp(10), chess.WHITE
+                        ),
+                        "pv": [candidate_two],
+                        "depth": 13,
+                    },
+                ]
+            ),
+            quit=AsyncMock(),
+        )
+        with (
+            patch("chess_logic.engine.os.getenv", return_value="/stockfish"),
+            patch("chess_logic.engine.os.path.exists", return_value=True),
+            patch(
+                "chess_logic.engine.chess.engine.popen_uci",
+                new=AsyncMock(return_value=(None, engine)),
+            ),
+        ):
+            result = await analyze_position(
+                board.fen(),
+                requested_move_ucis=[candidate_one.uci(), candidate_two.uci()],
+            )
+
+        self.assertIsNone(result["requested_move"])
+        self.assertEqual(
+            [candidate["move_label"] for candidate in result["requested_moves"]],
+            ["1. Nf3", "1. d4"],
+        )
 
 
 if __name__ == "__main__":

@@ -102,6 +102,34 @@ class ChessScopeTests(unittest.TestCase):
             )
         )
 
+    def test_position_payload_allows_only_known_engine_references(self):
+        valid = """{
+          "summary": "{{move:candidate_1}} poprawia aktywność figur.",
+          "line_explanations": [],
+          "requested_move_explanation": null,
+          "comparison_explanation": "{{move:candidate_1}} daje czarnym więcej inicjatywy niż {{move:candidate_2}}.",
+          "plans": [],
+          "practical_tip": null
+        }"""
+        self.assertIsNotNone(
+            _validated_position_payload(
+                valid,
+                variation_count=1,
+                has_requested_move=False,
+                requested_move_count=2,
+                allowed_references={"move:candidate_1", "move:candidate_2"},
+            )
+        )
+        self.assertIsNone(
+            _validated_position_payload(
+                valid.replace("candidate_2", "candidate_3"),
+                variation_count=1,
+                has_requested_move=False,
+                requested_move_count=2,
+                allowed_references={"move:candidate_1", "move:candidate_2"},
+            )
+        )
+
 
 class PromptSanitizationTests(unittest.TestCase):
     def test_pgn_removes_comments_variations_and_unknown_headers(self):
@@ -248,7 +276,7 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             await_args.kwargs["response_format"], {"type": "json_object"}
         )
-        self.assertIn("**Na ruchu:** białe", result.text)
+        self.assertIn("Białe na ruchu · oceny z perspektywy białych.", result.text)
 
     async def test_translation_has_its_own_prompt_and_output_cap(self):
         create = AsyncMock(return_value=completion_response("English analysis"))
