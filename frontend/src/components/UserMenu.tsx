@@ -99,10 +99,10 @@ export default function UserMenu() {
       <button
         className="support-icon-button"
         type="button"
-        title={user.system_role === "admin" ? "Zgłoszenia użytkowników" : "Pomoc i pomysły"}
+        title={user.system_role === "admin" ? "Wiadomości użytkowników" : "Wiadomości i pomoc"}
         aria-label={user.system_role === "admin"
-          ? `Zgłoszenia użytkowników${adminSupportUnreadCount ? `, ${adminSupportUnreadCount} nieprzeczytanych wiadomości` : ""}`
-          : `Pomoc i pomysły${supportUnreadCount ? `, ${supportUnreadCount} nieprzeczytanych wiadomości` : ""}`}
+          ? `Wiadomości użytkowników${adminSupportUnreadCount ? `, ${adminSupportUnreadCount} nieprzeczytanych wiadomości` : ""}`
+          : `Wiadomości i pomoc${supportUnreadCount ? `, ${supportUnreadCount} nieprzeczytanych wiadomości` : ""}`}
         onClick={() => {
           setAccountMenuOpen(false);
           setPlanOpen(false);

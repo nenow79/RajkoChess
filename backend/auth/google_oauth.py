@@ -18,6 +18,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from support.service import ensure_welcome_thread
+
 from auth.service import normalize_email
 
 GOOGLE_PROVIDER = "google"
@@ -179,6 +181,8 @@ async def login_or_register_google_user(
     )
     db.add(user)
     try:
+        await db.flush()
+        await ensure_welcome_thread(db, user=user)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()

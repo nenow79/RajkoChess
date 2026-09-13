@@ -10,7 +10,15 @@ from auth.dependencies import (
     require_admin_write,
     require_csrf,
 )
-from db.models import SupportMessage, SupportTicket, User
+from db.models import (
+    Announcement,
+    AnnouncementRead,
+    SupportMessage,
+    SupportTicket,
+    SystemRole,
+    User,
+    UserStatus,
+)
 from db.session import get_db_session
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from rate_limit import enforce_rate_limit, request_ip
@@ -18,6 +26,8 @@ from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from support.schemas import (
+    AdminTicketCreate,
+    AnnouncementCreate,
     TicketCreate,
     TicketMessageCreate,
     TicketRead,
@@ -35,6 +45,60 @@ def message_response(message: SupportMessage) -> dict:
         "content": message.content,
         "created_at": message.created_at.isoformat(),
     }
+
+
+async def announcement_response(
+    db: AsyncSession, *, announcement: Announcement, user: User | None = None
+) -> dict:
+    read = False
+    replied_ticket_id = None
+    if user is not None:
+        read = (
+            await db.scalar(
+                select(AnnouncementRead.announcement_id).where(
+                    AnnouncementRead.announcement_id == announcement.id,
+                    AnnouncementRead.user_id == user.id,
+                )
+            )
+            is not None
+        )
+        replied_ticket_id = await db.scalar(
+            select(SupportTicket.id).where(
+                SupportTicket.owner_id == user.id,
+                SupportTicket.source_announcement_id == announcement.id,
+            )
+        )
+    response = {
+        "id": str(announcement.id),
+        "title": announcement.title,
+        "content": announcement.content,
+        "published_at": announcement.published_at.isoformat(),
+        "expires_at": announcement.expires_at.isoformat()
+        if announcement.expires_at
+        else None,
+        "archived_at": announcement.archived_at.isoformat()
+        if announcement.archived_at
+        else None,
+    }
+    if user is not None:
+        response.update(
+            {
+                "read": read,
+                "replied_ticket_id": str(replied_ticket_id)
+                if replied_ticket_id
+                else None,
+            }
+        )
+    return response
+
+
+def visible_announcement_conditions(user: User, now: datetime) -> list:
+    return [
+        Announcement.published_at <= now,
+        Announcement.published_at >= user.created_at,
+        Announcement.archived_at.is_(None),
+        or_(Announcement.expires_at.is_(None), Announcement.expires_at > now),
+    ]
 
 
 async def unread_for_ticket(
@@ -78,6 +142,10 @@ async def ticket_response(
         "category": ticket.category,
         "subject": ticket.subject,
         "status": ticket.status,
+        "initiated_by": ticket.initiated_by,
+        "source_announcement_id": str(ticket.source_announcement_id)
+        if ticket.source_announcement_id
+        else None,
         "created_at": ticket.created_at.isoformat(),
         "updated_at": ticket.updated_at.isoformat(),
         "last_message_at": last_message_at.isoformat() if last_message_at else None,
@@ -149,7 +217,30 @@ async def total_unread(
                 SupportMessage.created_at > SupportTicket.admin_last_read_at,
             ),
         )
-    return int(await db.scalar(query) or 0)
+    ticket_count = int(await db.scalar(query) or 0)
+    if recipient != "user" or owner_id is None:
+        return ticket_count
+
+    user = await db.get(User, owner_id)
+    if user is None:
+        return ticket_count
+    now = datetime.now(timezone.utc)
+    announcement_count = int(
+        await db.scalar(
+            select(func.count(Announcement.id))
+            .outerjoin(
+                AnnouncementRead,
+                (AnnouncementRead.announcement_id == Announcement.id)
+                & (AnnouncementRead.user_id == owner_id),
+            )
+            .where(
+                *visible_announcement_conditions(user, now),
+                AnnouncementRead.announcement_id.is_(None),
+            )
+        )
+        or 0
+    )
+    return ticket_count + announcement_count
 
 
 async def mark_read(
@@ -244,6 +335,7 @@ async def create_ticket(
         category=payload.category,
         subject=payload.subject,
         status="open",
+        initiated_by="user",
         user_last_read_at=now,
     )
     db.add(ticket)
@@ -332,12 +424,298 @@ async def mark_my_ticket_read(
     }
 
 
+@router.get("/announcements")
+async def list_my_announcements(
+    current: Annotated[CurrentAuth, Depends(get_current_auth)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    limit: int = Query(default=30, ge=1, le=100),
+):
+    now = datetime.now(timezone.utc)
+    announcements = (
+        await db.scalars(
+            select(Announcement)
+            .where(*visible_announcement_conditions(current.user, now))
+            .order_by(Announcement.published_at.desc(), Announcement.id.desc())
+            .limit(limit)
+        )
+    ).all()
+    return {
+        "announcements": [
+            await announcement_response(db, announcement=item, user=current.user)
+            for item in announcements
+        ]
+    }
+
+
+@router.post("/announcements/{announcement_id}/read")
+async def mark_announcement_read(
+    announcement_id: uuid.UUID,
+    current: Annotated[CurrentAuth, Depends(require_csrf)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    now = datetime.now(timezone.utc)
+    announcement = await db.scalar(
+        select(Announcement).where(
+            Announcement.id == announcement_id,
+            *visible_announcement_conditions(current.user, now),
+        )
+    )
+    if announcement is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono ogłoszenia")
+    existing = await db.get(AnnouncementRead, (announcement.id, current.user.id))
+    if existing is None:
+        db.add(
+            AnnouncementRead(
+                announcement_id=announcement.id,
+                user_id=current.user.id,
+                read_at=now,
+            )
+        )
+        await db.commit()
+    return {
+        "unread_count": await total_unread(
+            db, recipient="user", owner_id=current.user.id
+        )
+    }
+
+
+@router.post("/announcements/{announcement_id}/reply")
+async def reply_to_announcement(
+    announcement_id: uuid.UUID,
+    payload: TicketMessageCreate,
+    request: Request,
+    current: Annotated[CurrentAuth, Depends(require_csrf)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    await enforce_rate_limit(
+        bucket="support-message-create",
+        identity=f"{current.user.id}:{request_ip(request)}",
+        limit=30,
+        window_seconds=3_600,
+    )
+    now = datetime.now(timezone.utc)
+    announcement = await db.scalar(
+        select(Announcement).where(
+            Announcement.id == announcement_id,
+            *visible_announcement_conditions(current.user, now),
+        )
+    )
+    if announcement is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono ogłoszenia")
+
+    ticket = await db.scalar(
+        select(SupportTicket).where(
+            SupportTicket.owner_id == current.user.id,
+            SupportTicket.source_announcement_id == announcement.id,
+        )
+    )
+    if ticket is None:
+        ticket = SupportTicket(
+            owner_id=current.user.id,
+            category="message",
+            subject=f"Odpowiedź: {announcement.title}"[:160],
+            status="open",
+            initiated_by="admin",
+            source_announcement_id=announcement.id,
+            user_last_read_at=now,
+        )
+        db.add(ticket)
+        await db.flush()
+        db.add(
+            SupportMessage(
+                ticket_id=ticket.id,
+                author_id=announcement.created_by_user_id,
+                author_role="admin",
+                content=announcement.content,
+            )
+        )
+    db.add(
+        SupportMessage(
+            ticket_id=ticket.id,
+            author_id=current.user.id,
+            author_role="user",
+            content=payload.message,
+        )
+    )
+    ticket.status = "open"
+    ticket.closed_at = None
+    ticket.updated_at = now
+    ticket.user_last_read_at = now
+    existing_read = await db.get(
+        AnnouncementRead, (announcement.id, current.user.id)
+    )
+    if existing_read is None:
+        db.add(
+            AnnouncementRead(
+                announcement_id=announcement.id,
+                user_id=current.user.id,
+                read_at=now,
+            )
+        )
+    await db.commit()
+    await db.refresh(ticket)
+    return await ticket_response(
+        db, ticket=ticket, recipient="user", include_messages=True
+    )
+
+
 @admin_router.get("/unread-count")
 async def admin_unread_count(
     current: Annotated[CurrentAuth, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ):
     return {"unread_count": await total_unread(db, recipient="admin")}
+
+
+@admin_router.post("/tickets", status_code=status.HTTP_201_CREATED)
+async def admin_create_ticket(
+    payload: AdminTicketCreate,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    owner = await db.scalar(
+        select(User).where(
+            User.id == payload.user_id,
+            User.status == UserStatus.ACTIVE,
+            User.system_role == SystemRole.USER,
+            User.email_verified_at.is_not(None),
+        )
+    )
+    if owner is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono aktywnego użytkownika")
+    now = datetime.now(timezone.utc)
+    ticket = SupportTicket(
+        owner_id=owner.id,
+        category="message",
+        subject=payload.subject,
+        status="waiting_user",
+        initiated_by="admin",
+        admin_last_read_at=now,
+    )
+    db.add(ticket)
+    await db.flush()
+    message = SupportMessage(
+        ticket_id=ticket.id,
+        author_id=current.user.id,
+        author_role="admin",
+        content=payload.message,
+    )
+    db.add(message)
+    await db.flush()
+    await write_audit(
+        db,
+        current=current,
+        action="support.admin_started_thread",
+        resource_type="support_ticket",
+        resource_id=str(ticket.id),
+        details={"owner_id": str(owner.id), "message_id": str(message.id)},
+    )
+    await db.commit()
+    await db.refresh(ticket)
+    return await ticket_response(
+        db, ticket=ticket, owner=owner, recipient="admin", include_messages=True
+    )
+
+
+@admin_router.get("/announcements")
+async def list_admin_announcements(
+    current: Annotated[CurrentAuth, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+    limit: int = Query(default=30, ge=1, le=100),
+):
+    announcements = (
+        await db.scalars(
+            select(Announcement)
+            .order_by(Announcement.published_at.desc(), Announcement.id.desc())
+            .limit(limit)
+        )
+    ).all()
+    items = []
+    for announcement in announcements:
+        response = await announcement_response(db, announcement=announcement)
+        response["read_count"] = int(
+            await db.scalar(
+                select(func.count(AnnouncementRead.user_id)).where(
+                    AnnouncementRead.announcement_id == announcement.id
+                )
+            )
+            or 0
+        )
+        response["reply_count"] = int(
+            await db.scalar(
+                select(func.count(SupportTicket.id)).where(
+                    SupportTicket.source_announcement_id == announcement.id
+                )
+            )
+            or 0
+        )
+        items.append(response)
+    return {"announcements": items}
+
+
+@admin_router.post("/announcements", status_code=status.HTTP_201_CREATED)
+async def create_announcement(
+    payload: AnnouncementCreate,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    now = datetime.now(timezone.utc)
+    recipient_count = int(
+        await db.scalar(
+            select(func.count(User.id)).where(
+                User.status == UserStatus.ACTIVE,
+                User.system_role == SystemRole.USER,
+                User.email_verified_at.is_not(None),
+                User.created_at <= now,
+            )
+        )
+        or 0
+    )
+    announcement = Announcement(
+        title=payload.title,
+        content=payload.content,
+        created_by_user_id=current.user.id,
+        published_at=now,
+        expires_at=payload.expires_at,
+    )
+    db.add(announcement)
+    await db.flush()
+    await write_audit(
+        db,
+        current=current,
+        action="announcement.published",
+        resource_type="announcement",
+        resource_id=str(announcement.id),
+        details={"recipient_count": recipient_count},
+    )
+    await db.commit()
+    await db.refresh(announcement)
+    response = await announcement_response(db, announcement=announcement)
+    response.update({"recipient_count": recipient_count, "read_count": 0, "reply_count": 0})
+    return response
+
+
+@admin_router.post("/announcements/{announcement_id}/archive")
+async def archive_announcement(
+    announcement_id: uuid.UUID,
+    current: Annotated[CurrentAuth, Depends(require_admin_write)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+):
+    announcement = await db.get(Announcement, announcement_id)
+    if announcement is None:
+        raise HTTPException(status_code=404, detail="Nie znaleziono ogłoszenia")
+    if announcement.archived_at is None:
+        announcement.archived_at = datetime.now(timezone.utc)
+        await write_audit(
+            db,
+            current=current,
+            action="announcement.archived",
+            resource_type="announcement",
+            resource_id=str(announcement.id),
+        )
+        await db.commit()
+        await db.refresh(announcement)
+    return await announcement_response(db, announcement=announcement)
 
 
 @admin_router.get("/tickets")

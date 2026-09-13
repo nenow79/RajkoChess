@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from chess_logic.llm_agent import (
     OUT_OF_SCOPE_MESSAGE,
     _validated_coach_payload,
+    _validated_position_payload,
     generate_bot_game_greeting,
     generate_chess_analysis,
     generate_game_analysis,
@@ -72,6 +73,34 @@ class ChessScopeTests(unittest.TestCase):
         ):
             with self.subTest(message=message):
                 self.assertFalse(is_full_game_analysis_request(message))
+
+    def test_position_payload_rejects_unverified_move_notation(self):
+        valid = """{
+          "summary": "Białe mają aktywniejsze figury.",
+          "line_explanations": [{"line_index": 1, "explanation": "Rozwój z tempem poprawia koordynację."}],
+          "requested_move_explanation": null,
+          "plans": ["Zakończ rozwój i zabezpiecz króla."],
+          "practical_tip": "Najpierw sprawdź forsowne odpowiedzi przeciwnika."
+        }"""
+        self.assertIsNotNone(
+            _validated_position_payload(
+                valid, variation_count=1, has_requested_move=False
+            )
+        )
+        self.assertIsNone(
+            _validated_position_payload(
+                valid.replace("aktywniejsze figury", "wygraną po Qxh7+"),
+                variation_count=1,
+                has_requested_move=False,
+            )
+        )
+        self.assertIsNone(
+            _validated_position_payload(
+                valid.replace("aktywniejsze figury", "atak na hetmana"),
+                variation_count=1,
+                has_requested_move=False,
+            )
+        )
 
 
 class PromptSanitizationTests(unittest.TestCase):
@@ -186,7 +215,13 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_position_analysis_caps_output_and_returns_usage_cost(self):
-        create = AsyncMock(return_value=completion_response())
+        create = AsyncMock(return_value=completion_response("""{
+          "summary": "Pozycja wymaga spokojnej poprawy figur.",
+          "line_explanations": [],
+          "requested_move_explanation": null,
+          "plans": ["Popraw koordynację figur."],
+          "practical_tip": "Porównaj odpowiedzi przeciwnika."
+        }"""))
         with (
             patch("chess_logic.llm_agent.has_openrouter_api_key", return_value=True),
             patch("chess_logic.llm_agent.client.chat.completions.create", create),
@@ -210,6 +245,10 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Wystąpił błąd", result.text)
         system_prompt = await_args.kwargs["messages"][0]["content"]
         self.assertIn(OUT_OF_SCOPE_MESSAGE, system_prompt)
+        self.assertEqual(
+            await_args.kwargs["response_format"], {"type": "json_object"}
+        )
+        self.assertIn("**Na ruchu:** białe", result.text)
 
     async def test_translation_has_its_own_prompt_and_output_cap(self):
         create = AsyncMock(return_value=completion_response("English analysis"))

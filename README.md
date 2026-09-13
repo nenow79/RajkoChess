@@ -16,11 +16,14 @@ backup, monitoring i reakcję na incydenty zawiera
 - import i analiza zakończonej partii PGN,
 - prywatna historia zaimportowanych i rozegranych partii, zapisanych analiz oraz
   rozmów RajkoAI przypisanych do konkretnej partii,
-- czat trenerski LLM oparty o dane z pozycji, Lichess i Stockfisha,
+- czat trenerski LLM z odpowiedziami składanymi ze zweryfikowanych wariantów
+  Stockfisha, statystyk Lichess i ograniczonych objaśnień modelu,
 - osobny tryb gry ze spersonalizowanymi botami o regulowanej sile, stylu i repertuarze,
 - opcjonalne, spersonalizowane powitania i komentarze LLM botów przy
   najważniejszych momentach oraz zejściu z ulubionego repertuaru,
 - kreator botów wspierany przez LLM oraz trwały katalog profili w PostgreSQL,
+- prywatne wiadomości między administratorem i użytkownikiem, ogłoszenia dla
+  wszystkich aktywnych użytkowników oraz odpowiadalne powitanie nowego konta,
 - lokalny katalog 3790 linii debiutowych z projektu `lichess-org/chess-openings`,
 - przekazanie zakończonej partii z botem bezpośrednio do trybu analizy.
 

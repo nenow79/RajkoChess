@@ -2079,6 +2079,7 @@
 .support-ticket-list small, .admin-support-list small { color: #7a878d; font-size: 9px; }
 .support-ticket-list > .support-new-button { display: block; padding: 10px; border-color: #587d36; background: #587d36; color: #fff; font-weight: 800; text-align: center; }
 .support-ticket-list > p { padding: 16px 6px; color: #7a878d; font-size: 11px; line-height: 1.45; text-align: center; }
+.support-ticket-list > .support-list-label, .admin-support-list > .support-list-label { margin: 8px 4px 1px; padding: 0; color: #7a878d; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-align: left; }
 .support-content { min-width: 0; min-height: 0; padding: 18px; overflow-y: auto; background: #fff; }
 .support-form { display: flex; max-width: 620px; flex-direction: column; gap: 13px; margin: 0 auto; }
 .support-form h3 { margin: 0 0 4px; color: #34495e; }
@@ -2098,6 +2099,7 @@
 .support-category.problem { background: #fff0ee; color: #a93226; }
 .support-category.idea { background: #f2eafa; color: #7d3c98; }
 .support-category.question { background: #e8f4f8; color: #2471a3; }
+.support-category.message { background: #edf4e6; color: #587d36; }
 .support-status { flex: 0 0 auto; background: #edf1f2; color: #607078; }
 .support-status.waiting_user { background: #fff4d6; color: #80650d; }
 .support-status.closed { background: #e7ecee; color: #69777d; }
@@ -2119,10 +2121,15 @@
 .admin-support-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .admin-support-toolbar p { margin: 0; }
 .admin-support-toolbar label { display: flex; flex: 0 0 190px; align-items: center; gap: 8px; color: #52616b; font-size: 11px; font-weight: 800; }
+.admin-message-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.admin-message-actions button { padding: 8px 11px; border: 1px solid #587d36; border-radius: 6px; background: #fff; color: #587d36; cursor: pointer; font-weight: 800; }
 .admin-support-layout { display: grid; min-height: 570px; grid-template-columns: 300px minmax(0, 1fr); overflow: hidden; border: 1px solid #dce4dd; border-radius: 9px; background: #fff; }
 .admin-support-list { display: flex; min-height: 0; flex-direction: column; gap: 6px; padding: 12px; overflow-y: auto; border-right: 1px solid #dce4dd; background: #f1f5f1; }
 .admin-support-list > button > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-support-thread { padding: 15px; overflow: hidden; }
+.announcement-content { margin: 16px 0; padding: 15px; border-left: 3px solid #7fa650; border-radius: 6px; background: #f3f7ef; color: #34495e; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.admin-announcement-detail { min-height: 0; overflow-y: auto; }
+.admin-compose-form { width: 100%; }
 .support-thread-heading select { width: auto; min-width: 190px; font-size: 11px; }
 
 @media (max-width: 850px) {

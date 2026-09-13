@@ -1,4 +1,5 @@
 import os
+import re
 from io import StringIO
 
 import chess
@@ -23,8 +24,65 @@ PIECE_VALUES = {
     chess.KING: 0,
 }
 
+POLISH_SAN_PIECES = {"Q": "H", "R": "W", "B": "G", "N": "S"}
 
-async def analyze_position(fen: str, time_limit: float = 0.5, multipv: int = 3) -> dict:
+
+def find_legal_move_in_text(fen: str, text: str) -> str | None:
+    """Return one unambiguously mentioned legal move as UCI.
+
+    Both standard SAN/UCI and the common Polish piece initials H/W/G/S are
+    accepted. When a question mentions multiple legal moves, no candidate is
+    selected automatically; the normal MultiPV analysis still applies.
+    """
+    board = chess.Board(fen)
+    found: set[str] = set()
+    normalized_text = " ".join(text.casefold().split())
+    castling_moves = [move for move in board.legal_moves if board.is_castling(move)]
+    long_castle = bool(
+        re.search(r"(?:dług[ąa]\s+roszad|roszad\w*\s+dług|long\s+castl|queenside\s+castl)", normalized_text)
+    )
+    short_castle = bool(
+        re.search(r"(?:krótk[ąa]\s+roszad|roszad\w*\s+krótk|short\s+castl|kingside\s+castl)", normalized_text)
+    )
+    mentions_castling = bool(re.search(r"\broszad\w*|\bcastl\w*", normalized_text))
+    if long_castle or short_castle or mentions_castling:
+        matching_castles = castling_moves
+        if long_castle and not short_castle:
+            matching_castles = [
+                move for move in castling_moves if move.to_square < move.from_square
+            ]
+        elif short_castle and not long_castle:
+            matching_castles = [
+                move for move in castling_moves if move.to_square > move.from_square
+            ]
+        if len(matching_castles) == 1:
+            found.add(matching_castles[0].uci())
+
+    for move in board.legal_moves:
+        san = board.san(move)
+        aliases = {san, san.rstrip("+#"), move.uci()}
+        if san.startswith(tuple(POLISH_SAN_PIECES)):
+            polish = POLISH_SAN_PIECES[san[0]] + san[1:]
+            aliases.update({polish, polish.rstrip("+#")})
+        if san.startswith("O-O"):
+            aliases.update({san.replace("O", "0"), san.rstrip("+#").replace("O", "0")})
+        for alias in aliases:
+            if re.search(
+                rf"(?<![A-Za-z0-9]){re.escape(alias)}(?![A-Za-z0-9])",
+                text,
+                re.IGNORECASE,
+            ):
+                found.add(move.uci())
+                break
+    return next(iter(found)) if len(found) == 1 else None
+
+
+async def analyze_position(
+    fen: str,
+    time_limit: float = 0.5,
+    multipv: int = 3,
+    requested_move_uci: str | None = None,
+) -> dict:
     stockfish_path = os.getenv("STOCKFISH_PATH")
 
     if not stockfish_path or not os.path.exists(stockfish_path):
@@ -94,10 +152,63 @@ async def analyze_position(fen: str, time_limit: float = 0.5, multipv: int = 3) 
                     "depth": info.get("depth", 0),
                     "line_uci": line_uci,
                     "line_san": line_san,  # Dodane: np. ["Nf3", "d6", "Bc4", "Nf6"]
+                    "evidence": _variation_evidence(
+                        board, list(principal_variation or [])[:8]
+                    ),
                 }
             )
 
-        return {"fen": fen, "variations": variations}
+        requested_move = None
+        if requested_move_uci:
+            try:
+                move = chess.Move.from_uci(requested_move_uci)
+            except ValueError:
+                move = None
+            if move is not None and move in board.legal_moves and infos:
+                mover = "white" if board.turn == chess.WHITE else "black"
+                san = board.san(move)
+                move_label = _move_label(board, san)
+                before_score = _score_for_white(infos[0])
+                after_board = board.copy()
+                after_board.push(move)
+                candidate_info = await engine.analyse(
+                    board,
+                    chess.engine.Limit(time=time_limit),
+                    root_moves=[move],
+                )
+                after_score = _score_for_white(candidate_info)
+                loss = (
+                    before_score - after_score
+                    if mover == "white"
+                    else after_score - before_score
+                )
+                requested_move = {
+                    "move_label": move_label,
+                    "san": san,
+                    "uci": move.uci(),
+                    "color": mover,
+                    "evaluation_before": round(before_score, 2),
+                    "evaluation_after": round(after_score, 2),
+                    "loss": round(max(loss, 0), 2),
+                    "root_depth": infos[0].get("depth", 0),
+                    "response_depth": candidate_info.get("depth", 0),
+                    "move_facts": _played_move_facts(board, move, after_board),
+                    "continuation": {
+                        **_variation_evidence(
+                            after_board,
+                            list(candidate_info.get("pv", []))[1:9],
+                            perspective=mover,
+                        ),
+                        "depth": candidate_info.get("depth", 0),
+                    },
+                }
+
+        return {
+            "fen": fen,
+            "side_to_move": "white" if board.turn == chess.WHITE else "black",
+            "variations": variations,
+            "requested_move": requested_move,
+        }
     finally:
         await engine.quit()
 

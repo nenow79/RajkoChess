@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from support.service import ensure_welcome_thread
+
 from auth.security import (
     DUMMY_PASSWORD_HASH,
     generate_secret,
@@ -176,6 +178,7 @@ async def verify_email_token(db: AsyncSession, *, token: str) -> User:
     model.consumed_at = now
     if model.user.email_verified_at is None:
         model.user.email_verified_at = now
+        await ensure_welcome_thread(db, user=model.user)
     await db.commit()
     return model.user
 

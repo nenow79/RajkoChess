@@ -195,7 +195,7 @@ export default function AdminPanel({ onClose, supportUnreadCount, onSupportUnrea
           <button className={view === "statistics" ? "active" : ""} type="button" onClick={() => setView("statistics")}>Statystyki</button>
           <button className={view === "users" ? "active" : ""} type="button" onClick={() => setView("users")}>Użytkownicy</button>
           <button className={view === "orders" ? "active" : ""} type="button" onClick={() => setView("orders")}>Zamówienia{orders.some(order => order.status === "pending") ? ` (${orders.filter(order => order.status === "pending").length})` : ""}</button>
-          <button className={view === "support" ? "active" : ""} type="button" onClick={() => setView("support")}>Zgłoszenia{supportUnreadCount > 0 && <i className="notification-badge">{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</i>}</button>
+          <button className={view === "support" ? "active" : ""} type="button" onClick={() => setView("support")}>Wiadomości{supportUnreadCount > 0 && <i className="notification-badge">{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</i>}</button>
           <button className="admin-refresh" type="button" disabled={loading} onClick={() => void load()}>Odśwież</button>
         </nav>
         {error && <p className="auth-error" role="alert">{error}</p>}
@@ -280,7 +280,7 @@ export default function AdminPanel({ onClose, supportUnreadCount, onSupportUnrea
             </tbody></table></div>
           </section>
         ) : view === "support" ? (
-          <AdminSupportView onUnreadChange={onSupportUnreadChange} />
+          <AdminSupportView users={users} onUnreadChange={onSupportUnreadChange} />
         ) : null}
       </section>
     </div>

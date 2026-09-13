@@ -1,5 +1,6 @@
 from db.models.audit_log import AuditLog
 from db.models.analysis import Analysis
+from db.models.announcement import Announcement, AnnouncementRead
 from db.models.auth_session import AuthSession
 from db.models.auth_token import AuthToken
 from db.models.bot import Bot
@@ -28,6 +29,8 @@ __all__ = [
     "AuditLog",
     "Analysis",
     "AnalysisStatus",
+    "Announcement",
+    "AnnouncementRead",
     "AuthSession",
     "AuthToken",
     "AuthTokenType",

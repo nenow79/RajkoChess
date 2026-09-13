@@ -38,7 +38,7 @@ from chess_logic.bot_catalog import (
 from chess_logic.bot_game import BotGameManager
 from chess_logic.bots import BotStore
 from chess_logic.chesscom import get_recent_games
-from chess_logic.engine import analyze_game, analyze_position
+from chess_logic.engine import analyze_game, analyze_position, find_legal_move_in_text
 from chess_logic.game import ChessGame
 from chess_logic.chat_history import (
     add_chat_messages,
@@ -944,6 +944,9 @@ async def chat_with_agent(
                 current_fen,
                 time_limit=min(max(time_limit, 0.05), 2.0),
                 multipv=min(max(lines, 1), 5),
+                requested_move_uci=find_legal_move_in_text(
+                    current_fen, request.message
+                ),
             )
             fallback_opening = identify_opening(position_history)
             try:

@@ -2,7 +2,7 @@ import axios from "axios";
 
 import { API_URL } from "../config";
 
-export type TicketCategory = "problem" | "idea" | "question";
+export type TicketCategory = "problem" | "idea" | "question" | "message";
 export type TicketStatus = "open" | "waiting_user" | "closed";
 
 export interface SupportMessage {
@@ -23,12 +23,28 @@ export interface SupportTicket {
   category: TicketCategory;
   subject: string;
   status: TicketStatus;
+  initiated_by: "user" | "admin" | "system";
+  source_announcement_id: string | null;
   created_at: string;
   updated_at: string;
   last_message_at: string | null;
   unread_count: number;
   owner?: TicketOwner;
   messages?: SupportMessage[];
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  published_at: string;
+  expires_at: string | null;
+  archived_at: string | null;
+  read?: boolean;
+  replied_ticket_id?: string | null;
+  recipient_count?: number;
+  read_count?: number;
+  reply_count?: number;
 }
 
 export const getSupportUnreadCount = () =>
@@ -66,3 +82,24 @@ export const markAdminSupportTicketRead = (ticketId: string, throughMessageId: s
 
 export const setAdminSupportTicketStatus = (ticketId: string, status: TicketStatus) =>
   axios.patch<SupportTicket>(`${API_URL}/admin/support/tickets/${ticketId}/status`, { status }).then((response) => response.data);
+
+export const getMyAnnouncements = () =>
+  axios.get<{ announcements: Announcement[] }>(`${API_URL}/support/announcements`).then((response) => response.data.announcements);
+
+export const markAnnouncementRead = (announcementId: string) =>
+  axios.post<{ unread_count: number }>(`${API_URL}/support/announcements/${announcementId}/read`).then((response) => response.data.unread_count);
+
+export const replyToAnnouncement = (announcementId: string, message: string) =>
+  axios.post<SupportTicket>(`${API_URL}/support/announcements/${announcementId}/reply`, { message }).then((response) => response.data);
+
+export const createAdminSupportThread = (userId: string, subject: string, message: string) =>
+  axios.post<SupportTicket>(`${API_URL}/admin/support/tickets`, { user_id: userId, subject, message }).then((response) => response.data);
+
+export const getAdminAnnouncements = () =>
+  axios.get<{ announcements: Announcement[] }>(`${API_URL}/admin/support/announcements`).then((response) => response.data.announcements);
+
+export const createAdminAnnouncement = (title: string, content: string, expiresAt: string | null) =>
+  axios.post<Announcement>(`${API_URL}/admin/support/announcements`, { title, content, expires_at: expiresAt }).then((response) => response.data);
+
+export const archiveAdminAnnouncement = (announcementId: string) =>
+  axios.post<Announcement>(`${API_URL}/admin/support/announcements/${announcementId}/archive`).then((response) => response.data);

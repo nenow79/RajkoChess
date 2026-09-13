@@ -5,6 +5,8 @@ from db.base import Base
 from db.models import (
     Analysis,
     AnalysisStatus,
+    Announcement,
+    AnnouncementRead,
     AuditLog,
     AuthSession,
     AuthToken,
@@ -51,6 +53,8 @@ class AuthModelMetadataTests(unittest.TestCase):
                 "payment_orders",
                 "support_tickets",
                 "support_messages",
+                "announcements",
+                "announcement_reads",
             },
         )
 
