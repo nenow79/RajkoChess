@@ -203,7 +203,12 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
     const positionRequest = initialGame?.pgn
       ? axios.post(`${API_URL}/import-game`, {
           pgn: initialGame.pgn,
-          metadata: { opponent: initialGame.bot?.name, result: initialGame.result, source: "bot" },
+          metadata: {
+            opponent: initialGame.bot?.name,
+            result: initialGame.result,
+            source: "bot",
+            color: initialGame.player_color,
+          },
         })
       : axios.get<PositionState>(`${API_URL}/position`);
     void positionRequest

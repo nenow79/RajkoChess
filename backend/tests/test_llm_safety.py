@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from chess_logic.llm_agent import (
     OUT_OF_SCOPE_MESSAGE,
+    _validated_coach_payload,
     generate_bot_game_greeting,
     generate_chess_analysis,
     generate_game_analysis,
@@ -104,6 +105,54 @@ class PromptSanitizationTests(unittest.TestCase):
         self.assertNotIn("private_note", sanitized)
         self.assertNotIn("rating", sanitized)
 
+    def test_structured_review_rejects_move_not_present_in_engine_evidence(self):
+        raw = """{
+          "overview": "Krótka analiza.",
+          "moments": [{"ply": 34, "explanation": "Po 18. Qh5 białe wygrywają.", "better_plan": "Broń pozycji."}],
+          "root_causes": ["Niedokładna kalkulacja."],
+          "training_recommendations": ["Ćwicz taktykę.", "Licz odpowiedzi.", "Sprawdzaj bicia."]
+        }"""
+
+        payload = _validated_coach_payload(
+            raw,
+            critical_moments=[{"ply": 34, "move_label": "17... Na4"}],
+            allowed_move_labels={"17... Na4", "18. Qxa4"},
+        )
+
+        self.assertIsNone(payload)
+
+    def test_structured_review_accepts_only_known_moment_ids(self):
+        raw = """{
+          "overview": "Krótka analiza.",
+          "moments": [{"ply": 99, "explanation": "Pozycja się pogorszyła.", "better_plan": "Broń pozycji."}],
+          "root_causes": [],
+          "training_recommendations": ["Ćwicz taktykę.", "Licz odpowiedzi.", "Sprawdzaj bicia."]
+        }"""
+
+        payload = _validated_coach_payload(
+            raw,
+            critical_moments=[{"ply": 34, "move_label": "17... Na4"}],
+            allowed_move_labels={"17... Na4"},
+        )
+
+        self.assertIsNone(payload)
+
+    def test_structured_review_rejects_unverified_unnumbered_piece_move(self):
+        raw = """{
+          "overview": "Kluczowe było rzekome Qh5.",
+          "moments": [],
+          "root_causes": [],
+          "training_recommendations": ["Ćwicz taktykę.", "Licz odpowiedzi.", "Sprawdzaj bicia."]
+        }"""
+
+        payload = _validated_coach_payload(
+            raw,
+            critical_moments=[{"ply": 34, "move_label": "17... Na4"}],
+            allowed_move_labels={"17... Na4", "18. Qxa4"},
+        )
+
+        self.assertIsNone(payload)
+
 
 class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
     async def test_bot_voice_uses_the_same_configured_model(self):
@@ -130,6 +179,8 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertIsNotNone(result)
+        self.assertIsNotNone(create.await_args)
+        assert create.await_args is not None
         self.assertEqual(
             create.await_args.kwargs["model"], "google/gemini-3-flash-preview"
         )
@@ -182,7 +233,12 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("wyłącznie przekazaną analizę szachową", system_prompt)
 
     async def test_game_analysis_requests_exact_clickable_move_labels(self):
-        create = AsyncMock(return_value=completion_response("Błąd nastąpił po 2. Nf3."))
+        create = AsyncMock(return_value=completion_response("""{
+          "overview": "Partia była wyrównana.",
+          "moments": [{"ply": 3, "explanation": "Tempo miało znaczenie.", "better_plan": "Rozwijaj figury."}],
+          "root_causes": ["Rozwój figur."],
+          "training_recommendations": ["Ćwicz rozwój.", "Sprawdzaj centrum.", "Licz odpowiedzi."]
+        }"""))
         with (
             patch("chess_logic.llm_agent.has_openrouter_api_key", return_value=True),
             patch("chess_logic.llm_agent.client.chat.completions.create", create),
@@ -200,9 +256,12 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
         await_args = create.await_args
         assert await_args is not None
         system_prompt = await_args.kwargs["messages"][0]["content"]
-        self.assertIn("dokładnego pola move_label", system_prompt)
+        self.assertIn("Pole ply musi być dokładną liczbą", system_prompt)
         user_context = await_args.kwargs["messages"][1]["content"]
         self.assertIn('"move_label": "2. Nf3"', user_context)
+        self.assertEqual(
+            await_args.kwargs["response_format"], {"type": "json_object"}
+        )
 
 
 if __name__ == "__main__":

@@ -483,6 +483,7 @@ async def bot_game_to_analysis(
         "opponent": bot_game.bot["name"],
         "result": bot_game.result,
         "source": "bot",
+        "color": "white" if bot_game.player_color else "black",
     }
     return game.load_pgn(bot_game.pgn(), metadata)
 
@@ -832,7 +833,9 @@ async def analyze_imported_game(
             lock_ttl_seconds=600,
         ) as usage_details:
             engine_data = await analyze_game(
-                imported_game["pgn"], time_limit=min(max(time_limit, 0.05), 1.0)
+                imported_game["pgn"],
+                time_limit=min(max(time_limit, 0.05), 1.0),
+                focus_color=imported_game["metadata"].get("color"),
             )
             llm_result = await generate_game_analysis(
                 pgn=imported_game["pgn"],

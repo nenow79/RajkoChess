@@ -272,6 +272,8 @@ class BotGameTests(unittest.IsolatedAsyncioTestCase):
                 await manager.start("session", bot, "white", llm_commentary=True)
                 response = await manager.move("session", "d2d4")
 
+            self.assertIsNotNone(generate.await_args)
+            assert generate.await_args is not None
             event = generate.await_args.kwargs["event"]
             self.assertEqual(event["type"], "left_favorite_opening")
             self.assertTrue(event["preferred_openings"])
