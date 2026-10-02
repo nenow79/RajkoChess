@@ -350,6 +350,8 @@
   scrollbar-gutter: stable;
 }
 
+.mobile-analysis-tools { display: none; }
+
 .chat-col {
   height: 100%;
   min-width: 0;
@@ -1120,6 +1122,8 @@
   border-radius: 5px;
   background: #fff;
 }
+
+.evaluation-chart-toggle { display: none; }
 
 .evaluation-chart-header {
   display: flex;
@@ -2064,6 +2068,65 @@
   }
 
   .stats-col { grid-row: 3; }
+
+  .mobile-analysis-tools {
+    display: block;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.1);
+  }
+
+  .mobile-analysis-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-bottom: 1px solid #dfe5e8;
+    background: #f7f9fa;
+  }
+
+  .mobile-analysis-tabs button {
+    padding: 11px 6px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    color: #61717b;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .mobile-analysis-tabs button.active {
+    border-bottom-color: #3498db;
+    background: #fff;
+    color: #2c3e50;
+  }
+
+  .mobile-analysis-tab-content > .side-panel {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .evaluation-chart-section.is-collapsed .evaluation-chart { display: none; }
+
+  .evaluation-chart-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 10px;
+    border: 1px solid #d7dde1;
+    border-radius: 5px;
+    background: #fff;
+    color: #354552;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .evaluation-chart-section.is-open .evaluation-chart-toggle { border-radius: 5px 5px 0 0; }
+  .evaluation-chart-section.is-open .evaluation-chart { border-top: 0; border-radius: 0 0 5px 5px; }
 
   .chat-container {
     height: min(70dvh, 620px);

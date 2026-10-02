@@ -38,6 +38,7 @@ export default function ChessBoardContainer({
   const [boardOrientation, setBoardOrientation] = useState<PlayerColor>("white");
   const [selectedSquareState, setSelectedSquareState] = useState<{ square: Square; fen: string } | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
+  const [isEvaluationChartOpen, setIsEvaluationChartOpen] = useState(true);
   const sourceSquare = navigationMove?.slice(0, 2) as Square | undefined;
   const targetSquare = navigationMove?.slice(2, 4) as Square | undefined;
   const selectedSquare = selectedSquareState?.fen === fen ? selectedSquareState.square : null;
@@ -169,11 +170,24 @@ export default function ChessBoardContainer({
               </button>
             </div>
           )}
-          <EvaluationChart
-            data={evaluationSeries}
-            currentPly={navigation.currentPly}
-            onNavigate={onNavigate}
-          />
+          {evaluationSeries?.length ? (
+            <div className={`evaluation-chart-section ${isEvaluationChartOpen ? "is-open" : "is-collapsed"}`}>
+              <button
+                type="button"
+                className="evaluation-chart-toggle"
+                aria-expanded={isEvaluationChartOpen}
+                onClick={() => setIsEvaluationChartOpen((current) => !current)}
+              >
+                <span>Przebieg oceny</span>
+                <span aria-hidden="true">{isEvaluationChartOpen ? "⌃" : "⌄"}</span>
+              </button>
+              <EvaluationChart
+                data={evaluationSeries}
+                currentPly={navigation.currentPly}
+                onNavigate={onNavigate}
+              />
+            </div>
+          ) : null}
           <div className="game-navigation" aria-label="Nawigacja po partii">
             <button
               type="button"

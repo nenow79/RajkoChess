@@ -29,6 +29,7 @@ interface AnalysisSourcePanelProps {
   onManualImport: (format: ImportFormat, value: string) => Promise<void>;
   onOpenStoredGame: (game: HistoricalGameOpen) => void;
   onError: (message: string) => void;
+  onGameSelected?: () => void;
 }
 
 const SOURCE_LABELS: Record<StoredGameSummary["source"], string> = {
@@ -75,6 +76,7 @@ export default function AnalysisSourcePanel({
   onManualImport,
   onOpenStoredGame,
   onError,
+  onGameSelected,
 }: AnalysisSourcePanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<SourceTab>("online");
@@ -145,6 +147,7 @@ export default function AnalysisSourcePanel({
   const selectChessComGame = (game: ChessComGame) => {
     onChessComImport(game);
     setIsOpen(false);
+    onGameSelected?.();
   };
 
   const handleLichessSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -157,6 +160,7 @@ export default function AnalysisSourcePanel({
   const selectLichessGame = (game: LichessGame) => {
     onLichessImport(game);
     setIsOpen(false);
+    onGameSelected?.();
   };
 
   const openStoredGame = async (gameId: string) => {
@@ -165,6 +169,7 @@ export default function AnalysisSourcePanel({
       const response = await axios.post<HistoricalGameOpen>(`${API_URL}/games/${gameId}/open`);
       onOpenStoredGame(response.data);
       setIsOpen(false);
+      onGameSelected?.();
     } catch (error) {
       onError(getAuthErrorMessage(error, "Nie udało się otworzyć zapisanej partii."));
     } finally {
@@ -181,6 +186,7 @@ export default function AnalysisSourcePanel({
       await onManualImport(importFormat, normalized);
       setImportValue("");
       setIsOpen(false);
+      onGameSelected?.();
     } catch {
       // Błąd jest prezentowany przez nadrzędny obszar roboczy.
     } finally {

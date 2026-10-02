@@ -8,6 +8,7 @@ import LichessExplorer from "./components/LichessExplorer";
 import StockfishPanel from "./components/StockfishPanel";
 import LLMChatPanel from "./components/LLMChatPanel"; // Import czatu
 import AnalysisSourcePanel from "./components/AnalysisSourcePanel";
+import MobileAnalysisTools, { type MobileToolTab } from "./components/MobileAnalysisTools";
 import { API_URL } from "./config";
 import BotGameMode from "./components/BotGameMode";
 import AuthScreen from "./components/AuthScreen";
@@ -73,6 +74,24 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
   const gameAnalysisRequestRef = useRef(0);
   const [navigationMove, setNavigationMove] = useState<string | null>(null);
   const [isVariationMode, setIsVariationMode] = useState(false);
+  const [isMobileLayout, setIsMobileLayout] = useState(() => window.matchMedia("(max-width: 850px)").matches);
+  const [mobileToolTab, setMobileToolTab] = useState<MobileToolTab>("explorer");
+  const lastMobileToolTabRef = useRef<Exclude<MobileToolTab, "source">>("explorer");
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 850px)");
+    const updateLayout = () => setIsMobileLayout(mediaQuery.matches);
+    updateLayout();
+    mediaQuery.addEventListener("change", updateLayout);
+    return () => mediaQuery.removeEventListener("change", updateLayout);
+  }, []);
+
+  const handleMobileToolTabChange = (tab: MobileToolTab) => {
+    setMobileToolTab(tab);
+    if (tab !== "source") lastMobileToolTabRef.current = tab;
+  };
+
+  const showLastMobileTool = () => setMobileToolTab(lastMobileToolTabRef.current);
 
   const clearGameAnalysis = useCallback(() => {
     gameAnalysisRequestRef.current += 1;
@@ -503,39 +522,81 @@ function AnalysisWorkspace({ onModeChange, initialBotGame, onInitialBotGameConsu
             evaluationSeries={gameAnalysis?.evaluation_series}
             pgn={importedGame?.pgn}
           />
-          <AnalysisSourcePanel
-            username={chessComUsername}
-            chessComGames={chessComGames}
-            isLoadingChessCom={isLoadingChessCom}
-            lichessUsername={lichessUsername}
-            lichessGames={lichessGames}
-            isLoadingLichess={isLoadingLichess}
-            importedGame={importedGame}
-            isFenPosition={isFenPosition}
-            activeGameId={importedGame?.storedGameId}
-            onChessComImport={(game) => handleImportGame(game, "chesscom")}
-            onChessComRefresh={fetchChessComGames}
-            onUsernameChange={handleChessComUsernameChange}
-            onLichessImport={(game) => handleImportGame(game, "lichess")}
-            onLichessRefresh={fetchLichessGames}
-            onLichessUsernameChange={handleLichessUsernameChange}
-            onManualImport={handleManualImport}
-            onOpenStoredGame={handleOpenHistoricalGame}
-            onError={setError}
-          />
+          {isMobileLayout ? (
+            <MobileAnalysisTools
+              activeTab={mobileToolTab}
+              onTabChange={handleMobileToolTabChange}
+              source={(
+                <AnalysisSourcePanel
+                  username={chessComUsername}
+                  chessComGames={chessComGames}
+                  isLoadingChessCom={isLoadingChessCom}
+                  lichessUsername={lichessUsername}
+                  lichessGames={lichessGames}
+                  isLoadingLichess={isLoadingLichess}
+                  importedGame={importedGame}
+                  isFenPosition={isFenPosition}
+                  activeGameId={importedGame?.storedGameId}
+                  onChessComImport={(game) => handleImportGame(game, "chesscom")}
+                  onChessComRefresh={fetchChessComGames}
+                  onUsernameChange={handleChessComUsernameChange}
+                  onLichessImport={(game) => handleImportGame(game, "lichess")}
+                  onLichessRefresh={fetchLichessGames}
+                  onLichessUsernameChange={handleLichessUsernameChange}
+                  onManualImport={handleManualImport}
+                  onOpenStoredGame={handleOpenHistoricalGame}
+                  onError={setError}
+                  onGameSelected={showLastMobileTool}
+                />
+              )}
+              explorer={(
+                <LichessExplorer
+                  data={explorerData}
+                  error={explorerError}
+                  ratingRange={explorerRatingRange}
+                  onRatingRangeChange={handleExplorerRatingRangeChange}
+                  onRetry={() => fetchExplorerData()}
+                />
+              )}
+              engine={<StockfishPanel data={analysisData} isAnalyzing={isAnalyzing} />}
+            />
+          ) : (
+            <AnalysisSourcePanel
+              username={chessComUsername}
+              chessComGames={chessComGames}
+              isLoadingChessCom={isLoadingChessCom}
+              lichessUsername={lichessUsername}
+              lichessGames={lichessGames}
+              isLoadingLichess={isLoadingLichess}
+              importedGame={importedGame}
+              isFenPosition={isFenPosition}
+              activeGameId={importedGame?.storedGameId}
+              onChessComImport={(game) => handleImportGame(game, "chesscom")}
+              onChessComRefresh={fetchChessComGames}
+              onUsernameChange={handleChessComUsernameChange}
+              onLichessImport={(game) => handleImportGame(game, "lichess")}
+              onLichessRefresh={fetchLichessGames}
+              onLichessUsernameChange={handleLichessUsernameChange}
+              onManualImport={handleManualImport}
+              onOpenStoredGame={handleOpenHistoricalGame}
+              onError={setError}
+            />
+          )}
         </div>
 
         {/* Kolumna 2: Panele Lichess + Stockfish */}
-        <div className="stats-col">
-          <LichessExplorer
-            data={explorerData}
-            error={explorerError}
-            ratingRange={explorerRatingRange}
-            onRatingRangeChange={handleExplorerRatingRangeChange}
-            onRetry={() => fetchExplorerData()}
-          />
-          <StockfishPanel data={analysisData} isAnalyzing={isAnalyzing} />
-        </div>
+        {!isMobileLayout && (
+          <div className="stats-col">
+            <LichessExplorer
+              data={explorerData}
+              error={explorerError}
+              ratingRange={explorerRatingRange}
+              onRatingRangeChange={handleExplorerRatingRangeChange}
+              onRetry={() => fetchExplorerData()}
+            />
+            <StockfishPanel data={analysisData} isAnalyzing={isAnalyzing} />
+          </div>
+        )}
 
         {/* Kolumna 3: Czat LLM */}
         <div className="chat-col">
