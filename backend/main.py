@@ -113,6 +113,7 @@ class ChatRequest(BaseModel):
 
 class GameReviewRequest(ChatRequest):
     focus_color: Literal["white", "black", "both"] | None = None
+    analysis_style: Literal["freestyle", "grounded"] = "grounded"
 
 
 class ImportGameRequest(BaseModel):
@@ -869,7 +870,10 @@ async def analyze_imported_game(
                 metadata=imported_game["metadata"],
                 user_prompt=request.message,
                 model=selected_model,
+                analysis_style=request.analysis_style,
             )
+            engine_data["analysis_style"] = request.analysis_style
+            usage_details["analysis_style"] = request.analysis_style
             usage_details.update(llm_result.usage)
             raw_game_id = imported_game.get("game_id")
             if not isinstance(raw_game_id, str):

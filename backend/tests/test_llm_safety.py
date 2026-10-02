@@ -357,6 +357,50 @@ class LLMCallLimitTests(unittest.IsolatedAsyncioTestCase):
             await_args.kwargs["response_format"], {"type": "json_object"}
         )
 
+    async def test_freestyle_preserves_markdown_and_explicit_perspective(self):
+        prose = "## Walka o inicjatywę\n\n**2. Nf3** otwiera nowy rozdział partii."
+        for focus, label in (("white", "white"), ("black", "black"), ("both", "nieustalona — obie strony")):
+            with self.subTest(focus=focus):
+                create = AsyncMock(return_value=completion_response(prose))
+                with (
+                    patch("chess_logic.llm_agent.has_openrouter_api_key", return_value=True),
+                    patch("chess_logic.llm_agent.client.chat.completions.create", create),
+                    patch("chess_logic.llm_agent._validated_coach_payload") as validate,
+                ):
+                    result = await generate_game_analysis(
+                        pgn="1. e4 e5 2. Nf3 *",
+                        engine_analysis={
+                            "focus_color": None if focus == "both" else focus,
+                            "focus_scope": focus,
+                            "phase_summaries": [{"phase": "opening"}],
+                            "positive_moments": [{"ply": 3, "move_label": "2. Nf3"}],
+                        },
+                        metadata={"color": "black"},
+                        analysis_style="freestyle",
+                    )
+                validate.assert_not_called()
+                self.assertTrue(result.text.endswith(prose))
+                self.assertIn("**Analiza epicka — freestyle**", result.text)
+                self.assertIn("*AI może czasem", result.text)
+                self.assertEqual(result.usage["total_tokens"], 150)
+                kwargs = create.await_args.kwargs
+                self.assertEqual(kwargs["response_format"], {"type": "text"})
+                self.assertIn(f"to {label}.", kwargs["messages"][0]["content"])
+                self.assertIn('"positive_moments"', kwargs["messages"][1]["content"])
+                self.assertIn('"phase_summaries"', kwargs["messages"][1]["content"])
+
+    async def test_default_grounded_mode_does_not_publish_invalid_raw_response(self):
+        create = AsyncMock(return_value=completion_response("FAŁSZYWY WARIANT Qxh7#"))
+        with (
+            patch("chess_logic.llm_agent.has_openrouter_api_key", return_value=True),
+            patch("chess_logic.llm_agent.client.chat.completions.create", create),
+        ):
+            result = await generate_game_analysis(
+                pgn="1. e4 e5 *", engine_analysis={}, metadata={}
+            )
+        self.assertIn("**Analiza uporządkowana", result.text)
+        self.assertNotIn("FAŁSZYWY WARIANT", result.text)
+
 
 if __name__ == "__main__":
     unittest.main()

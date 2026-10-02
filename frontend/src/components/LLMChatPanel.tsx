@@ -7,7 +7,7 @@ import type { GameAnalysis, GameNavigation, ImportedGame, StoredChatMessage } fr
 import { getAuthErrorMessage } from "../auth/api";
 import { getMyPlan } from "../admin/api";
 import { buildChessMoveOptions, remarkChessMoveLinks } from "../chessMoveReferences";
-import GameReviewPerspectiveDialog, { type GameReviewFocus } from "./GameReviewPerspectiveDialog";
+import GameReviewPerspectiveDialog, { type GameReviewFocus, type GameReviewStyle } from "./GameReviewPerspectiveDialog";
 
 interface ChatMessage {
   role: "bot" | "user";
@@ -187,14 +187,15 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed, onChatChang
     }
   };
 
-  const handleAnalyzeGame = async (focusColor: GameReviewFocus) => {
+  const handleAnalyzeGame = async (focusColor: GameReviewFocus, style: GameReviewStyle) => {
     if (!importedGame || isLoading) return;
 
     const gameLabel = importedGame.source === "pgn"
       ? `zaimportowaną partię${importedGame.opponent ? ` ${importedGame.opponent}` : ""}`
       : `partię przeciwko ${importedGame.opponent || "przeciwnikowi"}`;
     const focusLabel = focusColor === "white" ? "białych" : focusColor === "black" ? "czarnych" : "obu stron";
-    const reviewPrompt = `Przeanalizuj całą ${gameLabel} z perspektywy ${focusLabel}.`;
+    const styleLabel = style === "freestyle" ? "epicka — freestyle" : "uporządkowana — oparta na danych silnika";
+    const reviewPrompt = `Przeanalizuj całą ${gameLabel} z perspektywy ${focusLabel}. Styl analizy: ${styleLabel}.`;
     setMessages(prev => [...prev, {
       role: "user",
       text: reviewPrompt,
@@ -208,6 +209,7 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed, onChatChang
       const res = await axios.post<{ response: string; engine_analysis: GameAnalysis }>(`${API_URL}/analyze-game`, {
         message: reviewPrompt,
         focus_color: focusColor,
+        analysis_style: style,
       }, {
         signal: controller.signal,
       });
@@ -373,9 +375,9 @@ export default function LLMChatPanel({ importedGame, onGameAnalyzed, onChatChang
           whitePlayerName={whitePlayerName}
           blackPlayerName={blackPlayerName}
           onClose={() => setIsReviewFocusDialogOpen(false)}
-          onConfirm={(focus) => {
+          onConfirm={(focus, style) => {
             setIsReviewFocusDialogOpen(false);
-            void handleAnalyzeGame(focus);
+            void handleAnalyzeGame(focus, style);
           }}
         />
       )}
